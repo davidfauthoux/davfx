@@ -131,6 +131,7 @@
 		<module>davfx-csv</module>
 		<module>davfx-sort</module>
 		<module>davfx-string</module>
+		<module>davfx-script</module>
 	</modules>
 
 	<dependencies>
