@@ -29,7 +29,6 @@ final class CompositeSpecificationStringInput<T> implements StringInput<T> {
 		if (ges == null) {
 			return null;
 		}
-		System.out.println("ges="+(ges==null));
 		String ss = specificationSeparator.get(h);
 		String kvls = keyValueListSeparator.get(h);
 		String kvs = keyValueSeparator.get(h);
