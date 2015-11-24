@@ -15,7 +15,6 @@
 		<dependency>
 			<groupId>com.davfx</groupId>
 			<artifactId>davfx-util</artifactId>
-			<version>${davfx.version}</version>
 		</dependency>
 	</dependencies>
 </project>

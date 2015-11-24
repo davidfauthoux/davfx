@@ -30,7 +30,6 @@
 	</scm>
 
 	<properties>
-		<davfx.version>2.0</davfx.version>
 		<jdk.version>1.7</jdk.version>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 	</properties>
@@ -181,5 +180,32 @@
 	</dependencies>
 
 	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>com.davfx</groupId>
+				<artifactId>davfx-util</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.davfx</groupId>
+				<artifactId>davfx-csv</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.davfx</groupId>
+				<artifactId>davfx-sort</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.davfx</groupId>
+				<artifactId>davfx-string</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.davfx</groupId>
+				<artifactId>davfx-script</artifactId>
+				<version>${project.version}</version>
+			</dependency>
+		</dependencies>
 	</dependencyManagement>
 </project>
