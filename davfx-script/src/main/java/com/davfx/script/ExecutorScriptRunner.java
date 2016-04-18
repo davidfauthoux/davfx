@@ -54,7 +54,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 	private int nextUnicityId = 0;
 	private final Map<String, EndManager> endManagers = new HashMap<>();
-	private final List<String> registeredFunctions = new LinkedList<>();
+	//%%% private final List<String> registeredFunctions = new LinkedList<>();
 
 	public ExecutorScriptRunner() {
 		ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
@@ -68,6 +68,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		try {
 			scriptEngine.eval(ScriptUtils.functions());
 			scriptEngine.eval(""
+					+ "var " + UNICITY_PREFIX + "instanceId = null;"
 					+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;"
 					+ "var " + UNICITY_PREFIX + "callbacks = {};"
 				);
@@ -169,9 +170,15 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			}
 		}
 		public void inc() {
+			if (ended) {
+				LOGGER.error("Inc called on a terminated object");
+			}
 			count++;
 		}
 		public void dec() {
+			if (ended) {
+				LOGGER.error("Dec called on a terminated object");
+			}
 			count--;
 			if (count == 0) {
 				ended = true;
@@ -242,6 +249,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			
 			asyncFunction.call(request, new AsyncScriptFunction.Callback() {
 				@Override
+				protected void finalize() {
+					done();
+				}
+				@Override
+				public void done() {
+					executorService.execute(new Runnable() {
+						@Override
+						public void run() {
+							endManager.dec();
+						}
+					});
+				}
+				@Override
 				public void handle(final JsonElement response) {
 					if (executorService.isShutdown()) {
 						LOGGER.warn("Callback called after script engine has been closed");
@@ -255,46 +275,42 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								return;
 							}
 							try {
-								try {
-									if (USE_TO_STRING) {
-										scriptEngine.eval(""
-												+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-												+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-												+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + ((response == null) ? "null" : response.toString()) + ");"
-												+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
-												+ UNICITY_PREFIX + "f = undefined;"
-											);
+								if (USE_TO_STRING) {
+									scriptEngine.eval(""
+											+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
+											+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
+											+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + ((response == null) ? "null" : response.toString()) + ");"
+											+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
+											+ UNICITY_PREFIX + "f = undefined;"
+										);
+								} else {
+									if (response == null) {
+										scriptEngine.eval("var " + UNICITY_PREFIX + "r = null;");
 									} else {
-										if (response == null) {
-											scriptEngine.eval("var " + UNICITY_PREFIX + "r = null;");
-										} else {
-											String id = String.valueOf(nextUnicityId);
-											nextUnicityId++;
+										String id = String.valueOf(nextUnicityId);
+										nextUnicityId++;
 
-											scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
-											try {
-												scriptEngine.eval("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "convertTo(" + UNICITY_PREFIX + "response" + id + ");");
-											} finally {
-												scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
-												scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
-											}
+										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
+										try {
+											scriptEngine.eval("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "convertTo(" + UNICITY_PREFIX + "response" + id + ");");
+										} finally {
+											scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
+											scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
 										}
-										
-										scriptEngine.eval(""
-												+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-												+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-												+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);"
-												+ UNICITY_PREFIX + "r = null;" // Memsafe null-set
-												+ UNICITY_PREFIX + "r = undefined;"
-												+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
-												+ UNICITY_PREFIX + "f = undefined;"
-											);
 									}
-								} catch (Exception se) {
-									endManager.fail(new IOException(se));
+									
+									scriptEngine.eval(""
+											+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
+											+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
+											+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);"
+											+ UNICITY_PREFIX + "r = null;" // Memsafe null-set
+											+ UNICITY_PREFIX + "r = undefined;"
+											+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
+											+ UNICITY_PREFIX + "f = undefined;"
+										);
 								}
-							} finally {
-								endManager.dec();
+							} catch (Exception se) {
+								endManager.fail(new IOException(se));
 							}
 						}
 					});
@@ -348,21 +364,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				
 				try {
 					scriptEngine.eval(""
-							+ "var " + UNICITY_PREFIX + function + " = function(instanceId) {"
-								+ "return function(p, callback) {"
-									+ "var q = null;"
-									+ "if (p) {"
-										+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
-									+ "}"
-									+ "var callbackId = '" + function + id + "_' + " + UNICITY_PREFIX + "nextUnicityId;"
-									+ UNICITY_PREFIX + "nextUnicityId++;"
-									+ UNICITY_PREFIX + "callbacks[callbackId] = callback;"
-									+ functionObjectVar + ".call(instanceId, q, callbackId);"
-								+ "};"
+							+ "var " + function + " = function(p, callback) {"
+								+ "var q = null;"
+								+ "if (p) {"
+									+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
+								+ "}"
+								+ "var callbackId = '" + function + id + "_' + " + UNICITY_PREFIX + "nextUnicityId;"
+								+ UNICITY_PREFIX + "nextUnicityId++;"
+								+ UNICITY_PREFIX + "callbacks[callbackId] = callback;"
+								+ functionObjectVar + ".call("  + UNICITY_PREFIX + "instanceId, q, callbackId);"
 							+ "};"
 						);
 					
-					registeredFunctions.add(function);
+					//%% registeredFunctions.add(function);
 				} catch (Exception se) {
 					LOGGER.error("Could not register {}", function, se);
 				}
@@ -408,11 +422,13 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		return endManager;
 	}
 	
+	/*%%
 	private void addRegisteredFunctions(StringBuilder scriptBuilder, String instanceId) {
 		for (String function : registeredFunctions) {
 			scriptBuilder.append("var " + function + " = " + UNICITY_PREFIX + function + "('" + instanceId + "');");
 		}
 	}
+	*/
 
 	@Override
 	public void prepare(final String script, final ScriptRunner.End end) {
@@ -426,7 +442,8 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				endManager.inc();
 				try {
 					StringBuilder scriptBuilder = new StringBuilder();
-					addRegisteredFunctions(scriptBuilder, endManager.instanceId);
+					scriptBuilder.append(UNICITY_PREFIX + "instanceId = " + endManager.instanceId + ";");
+					//%% addRegisteredFunctions(scriptBuilder, endManager.instanceId);
 					scriptBuilder.append(script);
 					
 					String s = scriptBuilder.toString();
@@ -474,7 +491,8 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 							StringBuilder scriptBuilder = new StringBuilder();
 							scriptBuilder.append("var " + UNICITY_PREFIX + "closure" + closureId + " = function() {");
-							addRegisteredFunctions(scriptBuilder, endManager.instanceId);
+							scriptBuilder.append(UNICITY_PREFIX + "instanceId = " + endManager.instanceId + ";");
+							//%% addRegisteredFunctions(scriptBuilder, endManager.instanceId);
 	
 							for (Map.Entry<String, SyncScriptFunction> e : syncFunctions.entrySet()) {
 								String function = e.getKey();
