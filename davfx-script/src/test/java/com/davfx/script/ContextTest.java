@@ -64,4 +64,63 @@ public class ContextTest {
 		}
 	}
 
+	@Test
+	public void test2() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			final Lock<JsonElement, Exception> lock = new Lock<>();
+			final Lock<Boolean, Exception> endLock = new Lock<>();
+			
+			runner.register("trace", new SyncScriptFunction() {
+				@Override
+				public JsonElement call(JsonElement request) {
+					LOGGER.debug("TRACE {}", request);
+					lock.set(request);
+					return null;
+				}
+			});
+			runner.register("echo", new AsyncScriptFunction() {
+				@Override
+				public void call(JsonElement request, Callback callback) {
+					LOGGER.debug("ECHO {}", request);
+					callback.handle(request);
+					callback.done();
+				}
+			});
+			runner.prepare("var f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("f end");
+				}
+			});
+			
+			ScriptRunner.Engine engine = runner.engine();
+			engine.register("echo2", new AsyncScriptFunction() {
+				@Override
+				public void call(JsonElement request, Callback callback) {
+					LOGGER.debug("ECHO2 {}", request);
+					callback.handle(request);
+					callback.done();
+				}
+			});
+			engine.eval("f('aaa', function(r) { echo2(r, function(rr) { trace(rr); }); });", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+					endLock.set(true);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("f('aaa') end");
+					endLock.set(true);
+				}
+			});
+			
+			Assertions.assertThat(endLock.waitFor()).isTrue();
+			Assertions.assertThat(lock.waitFor().getAsString()).isEqualTo("aaa");
+		}
+	}
 }

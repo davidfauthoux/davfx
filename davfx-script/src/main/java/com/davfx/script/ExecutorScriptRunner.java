@@ -540,7 +540,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 												+ "var callbackId = '" + function + id + "_' + " + UNICITY_PREFIX + "nextUnicityId;"
 												+ UNICITY_PREFIX + "nextUnicityId++;"
 												+ UNICITY_PREFIX + "callbacks[callbackId] = callback;"
-												+ functionObjectVar + ".call('" + endManager.instanceId + "', q, callbackId);"
+												+ functionObjectVar + ".call("  + UNICITY_PREFIX + "instanceId, q, callbackId);"
 											+ "};"
 										);
 							}
