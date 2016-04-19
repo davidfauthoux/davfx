@@ -1,7 +1,6 @@
 package com.davfx.script;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -53,8 +52,6 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private final ScriptEngine scriptEngine;
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 	private int nextUnicityId = 0;
-	private final Map<String, EndManager> endManagers = new HashMap<>();
-	//%%% private final List<String> registeredFunctions = new LinkedList<>();
 
 	public ExecutorScriptRunner() {
 		ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
@@ -68,20 +65,20 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		try {
 			scriptEngine.eval(ScriptUtils.functions());
 			scriptEngine.eval(""
-					+ "var " + UNICITY_PREFIX + "instanceId = null;"
+					+ "var " + UNICITY_PREFIX + "context;"
 					+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;"
 					+ "var " + UNICITY_PREFIX + "callbacks = {};"
 				);
 			
 			if (USE_TO_STRING) {
 				scriptEngine.eval(""
-						+ "var " + UNICITY_PREFIX + "convertFrom = JSON.stringify;"
-						+ "var " + UNICITY_PREFIX + "convertTo = JSON.parse;"
+						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };"
+						+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };"
 					);
 			} else {
 				scriptEngine.eval(""
 						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) {"
-							+ "if (o == null) {"
+							+ "if (!o) {"
 								+ "return null;"
 							+ "}"
 							+ "if (o instanceof Array) {"
@@ -109,7 +106,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							+ "}"
 						+ "};"
 					+ "var " + UNICITY_PREFIX + "convertTo = function(o) {"
-						+ "if (o == null) {"
+						+ "if (!o) {"
 							+ "return null;"
 						+ "}"
 						+ "if (o.isJsonObject()) {"
@@ -149,12 +146,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	}
 	
 	private static final class EndManager {
-		public final String instanceId;
 		private int count = 0;
 		private End end;
 		private boolean ended = false;
-		public EndManager(String instanceId, End end) {
-			this.instanceId = instanceId;
+		public EndManager(End end) {
 			this.end = end;
 		}
 		public boolean isEnded() {
@@ -170,19 +165,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			}
 		}
 		public void inc() {
-			if (ended) {
-				LOGGER.error("Inc called on a terminated object");
-			}
 			count++;
 		}
 		public void dec() {
-			if (ended) {
-				LOGGER.error("Dec called on a terminated object");
-			}
 			count--;
-			if (count < 0) {
-				LOGGER.error("-------");
-			}
 			if (count == 0) {
 				ended = true;
 				End ee = end;
@@ -202,23 +188,16 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 		public Object call(Object requestAsObject) {
 			JsonElement request;
-			if (requestAsObject == null) {
-				request = null;
+			if (USE_TO_STRING) {
+				request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
 			} else {
-				if (USE_TO_STRING) {
-					request = new JsonParser().parse((String) requestAsObject);
-				} else {
-					request = (JsonElement) requestAsObject;
-				}
+				request = (JsonElement) requestAsObject;
 			}
 			
 			JsonElement response = syncFunction.call(request);
-			if (response == null) {
-				return null;
-			}
 			
 			if (USE_TO_STRING) {
-				return response.toString();
+				return (response == null) ? "null" : response.toString();
 			} else {
 				return response;
 			}
@@ -227,28 +206,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	// Must be be public to be called from javascript
 	public final class AsyncInternal {
-		private final String function;
 		private final AsyncScriptFunction asyncFunction;
-		private AsyncInternal(String function, AsyncScriptFunction asyncFunction) {
-			this.function = function;
+		private AsyncInternal(AsyncScriptFunction asyncFunction) {
 			this.asyncFunction = asyncFunction;
 		}
-		public void call(final String instanceId, Object requestAsObject, final String callbackId) {
+		public void call(final EndManager context, Object requestAsObject, final Object callbackObject) {
 			JsonElement request;
-			if (requestAsObject == null) {
-				request = null;
+			if (USE_TO_STRING) {
+				request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
 			} else {
-				if (USE_TO_STRING) {
-					request = new JsonParser().parse((String) requestAsObject);
-				} else {
-					request = (JsonElement) requestAsObject;
-				}
+				request = (JsonElement) requestAsObject;
 			}
 			
-			final EndManager endManager = endManagers.get(instanceId);
-			endManager.inc();
-			
-			LOGGER.trace("Call {}, instanceId = {}, callbackId = {}, request = {}", function, instanceId, callbackId, request);
+			context.inc();
 			
 			asyncFunction.call(request, new AsyncScriptFunction.Callback() {
 				private boolean decCalled = false;
@@ -265,7 +235,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								return;
 							}
 							decCalled = true;
-							endManager.dec();
+							context.dec();
 						}
 					});
 				}
@@ -274,47 +244,48 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					executorService.execute(new Runnable() {
 						@Override
 						public void run() {
-							if (endManager.isEnded()) {
+							if (context.isEnded()) {
 								LOGGER.warn("Callback called on a terminated object");
 								return;
 							}
 							try {
-								if (USE_TO_STRING) {
-									scriptEngine.eval(""
-											+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-											+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-											+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + ((response == null) ? "null" : response.toString()) + ");"
-											+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
-											+ UNICITY_PREFIX + "f = undefined;"
-										);
-								} else {
-									if (response == null) {
-										scriptEngine.eval("var " + UNICITY_PREFIX + "r = null;");
-									} else {
-										String id = String.valueOf(nextUnicityId);
-										nextUnicityId++;
+								String id = String.valueOf(nextUnicityId);
+								nextUnicityId++;
 
-										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
-										try {
-											scriptEngine.eval("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "convertTo(" + UNICITY_PREFIX + "response" + id + ");");
-										} finally {
-											scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
-											scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
-										}
+								if (!USE_TO_STRING) {
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
+								}
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, callbackObject);
+								try {
+									StringBuilder scriptBuilder = new StringBuilder();
+									scriptBuilder.append("(function() {\n");
+									scriptBuilder.append("var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject" + id + ";\n");
+									if (USE_TO_STRING) {
+										scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n");
+									} else {
+										scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response" + id + ";\n");
 									}
-									
-									scriptEngine.eval(""
-											+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-											+ "delete " + UNICITY_PREFIX + "callbacks['" + callbackId + "'];"
-											+ "if (" + UNICITY_PREFIX + "f) " + UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);"
-											+ UNICITY_PREFIX + "r = null;" // Memsafe null-set
-											+ UNICITY_PREFIX + "r = undefined;"
-											+ UNICITY_PREFIX + "f = null;" // Memsafe null-set
-											+ UNICITY_PREFIX + "f = undefined;"
+									scriptBuilder.append(UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n");
+									scriptBuilder.append(""
+											+ "})();\n"
 										);
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
+									try {
+										scriptEngine.eval(scriptBuilder.toString());
+									} finally {
+										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
+									}
+								} finally {
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, null); // Memsafe null-set
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "callbackObject" + id);
+									if (!USE_TO_STRING) {
+										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
+										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
+									}
 								}
 							} catch (Exception se) {
-								endManager.fail(new IOException(se));
+								LOGGER.error("Script callback fail", se);
+								context.fail(new IOException(se));
 							}
 						}
 					});
@@ -332,24 +303,22 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				nextUnicityId++;
 				
 				String functionObjectVar = UNICITY_PREFIX + "function_" + function + id;
+				String varFunctionObjectVar = UNICITY_PREFIX + "varfunction_" + function + id;
+
 				scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new SyncInternal(syncFunction));
-				
 				try {
-					scriptEngine.eval(""
-							+ "var " + function + " = function(p) {"
-								+ "var q = null;"
-								+ "if (p) {"
-									+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
-								+ "}"
-								+ "var r = " + functionObjectVar + ".call(q);"
-								+ "if (r == null) {"
-									+ "return null;"
-								+ "}"
-								+ "return " + UNICITY_PREFIX + "convertTo(r);"
-							+ "};"
-						);
-				} catch (Exception se) {
-					LOGGER.error("Could not register {}", function, se);
+					try {
+						scriptEngine.eval(""
+								+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
+								+ "var " + function + " = function(p) {\n"
+									+ "return " + UNICITY_PREFIX + "convertTo(" + varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "convertFrom(p)));\n"
+								+ "};\n"
+							);
+					} catch (Exception se) {
+						LOGGER.error("Could not register {}", function, se);
+					}
+				} finally {
+					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(functionObjectVar);
 				}
 			}
 		});
@@ -364,75 +333,26 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				nextUnicityId++;
 				
 				String functionObjectVar = UNICITY_PREFIX + "function_" + function + id;
-				scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new AsyncInternal(function, asyncFunction));
-				
+				String varFunctionObjectVar = UNICITY_PREFIX + "varfunction_" + function + id;
+
+				scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new AsyncInternal(asyncFunction));
 				try {
-					scriptEngine.eval(""
-							+ "var " + function + " = function(p, callback) {"
-								+ "var q = null;"
-								+ "if (p) {"
-									+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
-								+ "}"
-								+ "var callbackId = '" + function + id + "_' + " + UNICITY_PREFIX + "nextUnicityId;"
-								+ UNICITY_PREFIX + "nextUnicityId++;"
-								+ UNICITY_PREFIX + "callbacks[callbackId] = callback;"
-								+ functionObjectVar + ".call("  + UNICITY_PREFIX + "instanceId, q, callbackId);"
-							+ "};"
-						);
-					
-					//%% registeredFunctions.add(function);
-				} catch (Exception se) {
-					LOGGER.error("Could not register {}", function, se);
-				}
-			}
-		});
-	}
-
-	private EndManager endManager(final List<String> bindingsToRemove, final ScriptRunner.End end) {
-		final String instanceId = String.valueOf(nextUnicityId);
-		nextUnicityId++;
-
-		final Runnable clean = new Runnable() {
-			@Override
-			public void run() {
-				endManagers.remove(instanceId);
-				if (bindingsToRemove != null) {
-					for (String functionObjectVar : bindingsToRemove) {
-						scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, null); // Memsafe null-set
-						scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(functionObjectVar);
+					try {
+						scriptEngine.eval(""
+								+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
+								+ "var " + function + " = function(p, callback) {\n"
+									+ varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "context, " + UNICITY_PREFIX + "convertFrom(p), function(r) { callback(" + UNICITY_PREFIX + "convertTo(r)); });\n"
+								+ "};\n"
+							);
+					} catch (Exception se) {
+						LOGGER.error("Could not register {}", function, se);
 					}
-				}
-			}
-		};
-		
-		EndManager endManager = new EndManager(instanceId, new ScriptRunner.End() {
-			@Override
-			public void failed(Exception e) {
-				clean.run();
-				if (end != null) {
-					end.failed(e);
-				}
-			}
-			@Override
-			public void ended() {
-				clean.run();
-				if (end != null) {
-					end.ended();
+				} finally {
+					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(functionObjectVar);
 				}
 			}
 		});
-		endManagers.put(instanceId, endManager);
-		
-		return endManager;
 	}
-	
-	/*%%
-	private void addRegisteredFunctions(StringBuilder scriptBuilder, String instanceId) {
-		for (String function : registeredFunctions) {
-			scriptBuilder.append("var " + function + " = " + UNICITY_PREFIX + function + "('" + instanceId + "');");
-		}
-	}
-	*/
 
 	@Override
 	public void prepare(final String script, final ScriptRunner.End end) {
@@ -442,20 +362,23 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		executorService.execute(new Runnable() {
 			@Override
 			public void run() {
-				EndManager endManager = endManager(null, end);
+				EndManager endManager = new EndManager(end);
 				endManager.inc();
 				try {
 					StringBuilder scriptBuilder = new StringBuilder();
-					scriptBuilder.append(UNICITY_PREFIX + "instanceId = " + endManager.instanceId + ";");
-					//%% addRegisteredFunctions(scriptBuilder, endManager.instanceId);
 					scriptBuilder.append(script);
 					
 					String s = scriptBuilder.toString();
+					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", endManager);
 					try {
-						scriptEngine.eval(s);
-					} catch (Exception se) {
-						LOGGER.error("Script error: {}", s, se);
-						endManager.fail(new IOException(se));
+						try {
+							scriptEngine.eval(s);
+						} catch (Exception se) {
+							LOGGER.error("Script error: {}", s, se);
+							endManager.fail(new IOException(se));
+						}
+					} finally {
+						scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
 					}
 				} finally {
 					endManager.dec();
@@ -487,16 +410,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					@Override
 					public void run() {
 						final List<String> bindingsToRemove = new LinkedList<>();
-						EndManager endManager = endManager(bindingsToRemove, end);
+						EndManager endManager = new EndManager(end);
 						endManager.inc();
 						try {
-							String closureId = String.valueOf(nextUnicityId);
-							nextUnicityId++;
-	
 							StringBuilder scriptBuilder = new StringBuilder();
-							scriptBuilder.append("var " + UNICITY_PREFIX + "closure" + closureId + " = function() {");
-							scriptBuilder.append(UNICITY_PREFIX + "instanceId = " + endManager.instanceId + ";");
-							//%% addRegisteredFunctions(scriptBuilder, endManager.instanceId);
+							scriptBuilder.append("(function() {");
 	
 							for (Map.Entry<String, SyncScriptFunction> e : syncFunctions.entrySet()) {
 								String function = e.getKey();
@@ -506,21 +424,15 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								nextUnicityId++;
 								
 								String functionObjectVar = UNICITY_PREFIX + "function_" + function + id;
+								String varFunctionObjectVar = UNICITY_PREFIX + "varfunction_" + function + id;
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new SyncInternal(syncFunction));
 								bindingsToRemove.add(functionObjectVar);
 								
 								scriptBuilder.append(""
-											+ "var " + function + " = function(p) {"
-												+ "var q = null;"
-												+ "if (p) {"
-													+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
-												+ "}"
-												+ "var r = " + functionObjectVar + ".call(q);"
-												+ "if (r == null) {"
-													+ "return null;"
-												+ "}"
-												+ "return " + UNICITY_PREFIX + "convertTo(r);"
-											+ "};"
+											+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
+											+ "var " + function + " = function(p) {\n"
+												+ "return " + UNICITY_PREFIX + "convertTo(" + varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "convertFrom(p)));\n"
+											+ "};\n"
 										);
 							}
 	
@@ -532,37 +444,40 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								nextUnicityId++;
 								
 								String functionObjectVar = UNICITY_PREFIX + "function_" + function + id;
-								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new AsyncInternal(function, asyncFunction));
+								String varFunctionObjectVar = UNICITY_PREFIX + "varfunction_" + function + id;
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new AsyncInternal(asyncFunction));
 								bindingsToRemove.add(functionObjectVar);
 
 								scriptBuilder.append(""
-											+ "var " + function + " = function(p, callback) {"
-												+ "var q = null;"
-												+ "if (p) {"
-													+ "q = " + UNICITY_PREFIX + "convertFrom(p);"
-												+ "}"
-												+ "var callbackId = '" + function + id + "_' + " + UNICITY_PREFIX + "nextUnicityId;"
-												+ UNICITY_PREFIX + "nextUnicityId++;"
-												+ UNICITY_PREFIX + "callbacks[callbackId] = callback;"
-												+ functionObjectVar + ".call("  + UNICITY_PREFIX + "instanceId, q, callbackId);"
-											+ "};"
+											+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
+											+ "var " + function + " = function(p, callback) {\n"
+												+ varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "context, " + UNICITY_PREFIX + "convertFrom(p), function(r) { callback(" + UNICITY_PREFIX + "convertTo(r)); });\n"
+											+ "};\n"
 										);
 							}
 							
 							scriptBuilder.append(script);
 							scriptBuilder.append(""
-									+ "};"
-									+ UNICITY_PREFIX + "closure" + closureId + "();"
-									+ UNICITY_PREFIX + "closure" + closureId + " = null;" // Memsafe null-set
-									+ UNICITY_PREFIX + "closure" + closureId + " = undefined;"
+									+ "})();"
 								);
 							
 							String s = scriptBuilder.toString();
 							try {
-								scriptEngine.eval(s);
-							} catch (Exception se) {
-								LOGGER.error("Script error: {}", s, se);
-								endManager.fail(new IOException(se));
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", endManager);
+								try {
+									try {
+										scriptEngine.eval(s);
+									} catch (Exception se) {
+										LOGGER.error("Script error: {}", s, se);
+										endManager.fail(new IOException(se));
+									}
+								} finally {
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
+								}
+							} finally {
+								for (String functionObjectVar : bindingsToRemove) {
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(functionObjectVar);
+								}
 							}
 						} finally {
 							endManager.dec();
