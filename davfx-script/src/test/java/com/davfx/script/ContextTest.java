@@ -241,13 +241,14 @@ public class ContextTest {
 	
 	@Test
 	public void test4() throws Exception {
+		final Executor e = Executors.newSingleThreadExecutor();
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			final Lock<JsonElement, Exception> lock0 = new Lock<>();
 			final Lock<Boolean, Exception> endLock0 = new Lock<>();
 			final Lock<JsonElement, Exception> lock1 = new Lock<>();
 			final Lock<Boolean, Exception> endLock1 = new Lock<>();
 			
-			runner.prepare("var out$; var f = function(a, c) { out$(a); c(); };", new ScriptRunner.End() {
+			runner.prepare("var context;", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -255,7 +256,33 @@ public class ContextTest {
 				}
 				@Override
 				public void ended() {
-					LOGGER.debug("f end");
+				}
+			});
+			runner.register("echo", new AsyncScriptFunction() {
+				@Override
+				public void call(final JsonElement request, final Callback callback) {
+					e.execute(new Runnable() {
+						@Override
+						public void run() {
+							try {
+								Thread.sleep(100);
+							} catch (InterruptedException ie) {
+							}
+							LOGGER.debug("ECHO {}", request);
+							callback.handle(request);
+							callback.done();
+						}
+					});
+				}
+			});
+			runner.prepare("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					lock1.fail(e);
+				}
+				@Override
+				public void ended() {
 				}
 			});
 			
@@ -263,22 +290,12 @@ public class ContextTest {
 			engine0.register("out", new SyncScriptFunction() {
 				@Override
 				public JsonElement call(JsonElement request) {
-					LOGGER.debug("Out {}", request);
+					LOGGER.debug("Out0 {}", request);
 					lock0.set(request);
 					return request;
 				}
 			});
-			ScriptRunner.Engine engine1 = runner.engine();
-			engine1.register("out", new SyncScriptFunction() {
-				@Override
-				public JsonElement call(JsonElement request) {
-					LOGGER.debug("Out {}", request);
-					lock1.set(request);
-					return request;
-				}
-			});
-			
-			engine0.eval("out$ = out; f('aaa0', function() {});", new ScriptRunner.End() {
+			engine0.eval("context = { out: out }; f('aaa0', function() {});", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -290,7 +307,115 @@ public class ContextTest {
 					endLock0.set(true);
 				}
 			});
-			engine1.eval("out$ = out; f('aaa1', function() {});", new ScriptRunner.End() {
+
+			ScriptRunner.Engine engine1 = runner.engine();
+			engine1.register("out", new SyncScriptFunction() {
+				@Override
+				public JsonElement call(JsonElement request) {
+					LOGGER.debug("Out1 {}", request);
+					lock1.set(request);
+					return request;
+				}
+			});
+			engine1.eval("context = { out: out }; f('aaa1', function() {});", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock1.fail(e);
+					endLock1.set(true);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("f('aaa1') end");
+					endLock1.set(true);
+				}
+			});
+			
+			Assertions.assertThat(endLock0.waitFor()).isTrue();
+			Assertions.assertThat(endLock1.waitFor()).isTrue();
+			Assertions.assertThat(lock0.waitFor().getAsString()).isEqualTo("aaa0");
+			Assertions.assertThat(lock1.waitFor().getAsString()).isEqualTo("aaa1");
+		}
+	}
+	
+	@Test
+	public void test5() throws Exception {
+		final Executor e = Executors.newSingleThreadExecutor();
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			final Lock<JsonElement, Exception> lock0 = new Lock<>();
+			final Lock<Boolean, Exception> endLock0 = new Lock<>();
+			final Lock<JsonElement, Exception> lock1 = new Lock<>();
+			final Lock<Boolean, Exception> endLock1 = new Lock<>();
+			
+			runner.prepare("var context;", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					lock1.fail(e);
+				}
+				@Override
+				public void ended() {
+				}
+			});
+			runner.register("echo", new AsyncScriptFunction() {
+				@Override
+				public void call(final JsonElement request, final Callback callback) {
+					e.execute(new Runnable() {
+						@Override
+						public void run() {
+							try {
+								Thread.sleep(100);
+							} catch (InterruptedException ie) {
+							}
+							LOGGER.debug("ECHO {}", request);
+							callback.handle(request);
+							callback.done();
+						}
+					});
+				}
+			});
+			runner.prepare("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					lock1.fail(e);
+				}
+				@Override
+				public void ended() {
+				}
+			});
+			
+			ScriptRunner.Engine engine0 = runner.engine();
+			engine0.register("out", new SyncScriptFunction() {
+				@Override
+				public JsonElement call(JsonElement request) {
+					LOGGER.debug("Out0 {}", request);
+					lock0.set(request);
+					return request;
+				}
+			});
+			engine0.eval("context = { out: out }; f('aaa0', function() {}); f('aaa0', function() {});", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					endLock0.set(true);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("f('aaa0') end");
+					endLock0.set(true);
+				}
+			});
+
+			ScriptRunner.Engine engine1 = runner.engine();
+			engine1.register("out", new SyncScriptFunction() {
+				@Override
+				public JsonElement call(JsonElement request) {
+					LOGGER.debug("Out1 {}", request);
+					lock1.set(request);
+					return request;
+				}
+			});
+			engine1.eval("context = { out: out }; f('aaa1', function() {}); f('aaa1', function() {});", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock1.fail(e);

@@ -180,6 +180,9 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				LOGGER.error("Dec called on a terminated object");
 			}
 			count--;
+			if (count < 0) {
+				LOGGER.error("-------");
+			}
 			if (count == 0) {
 				ended = true;
 				End ee = end;
@@ -248,6 +251,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			LOGGER.trace("Call {}, instanceId = {}, callbackId = {}, request = {}", function, instanceId, callbackId, request);
 			
 			asyncFunction.call(request, new AsyncScriptFunction.Callback() {
+				private boolean decCalled = false;
 				@Override
 				protected void finalize() {
 					done();
@@ -257,16 +261,16 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					executorService.execute(new Runnable() {
 						@Override
 						public void run() {
+							if (decCalled) {
+								return;
+							}
+							decCalled = true;
 							endManager.dec();
 						}
 					});
 				}
 				@Override
 				public void handle(final JsonElement response) {
-					if (executorService.isShutdown()) {
-						LOGGER.warn("Callback called after script engine has been closed");
-						return;
-					}
 					executorService.execute(new Runnable() {
 						@Override
 						public void run() {
