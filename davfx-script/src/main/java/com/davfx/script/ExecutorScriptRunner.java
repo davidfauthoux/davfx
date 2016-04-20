@@ -1,6 +1,5 @@
 package com.davfx.script;
 
-import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -248,44 +247,44 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								LOGGER.warn("Callback called on a terminated object");
 								return;
 							}
-							try {
-								String id = String.valueOf(nextUnicityId);
-								nextUnicityId++;
+							String id = String.valueOf(nextUnicityId);
+							nextUnicityId++;
 
-								if (!USE_TO_STRING) {
-									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
+							if (!USE_TO_STRING) {
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, response);
+							}
+							scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, callbackObject);
+							try {
+								StringBuilder scriptBuilder = new StringBuilder();
+								scriptBuilder.append("(function() {\n");
+								scriptBuilder.append("var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject" + id + ";\n");
+								if (USE_TO_STRING) {
+									scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n");
+								} else {
+									scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response" + id + ";\n");
 								}
-								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, callbackObject);
+								scriptBuilder.append(UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n");
+								scriptBuilder.append(""
+										+ "})();\n"
+									);
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
 								try {
-									StringBuilder scriptBuilder = new StringBuilder();
-									scriptBuilder.append("(function() {\n");
-									scriptBuilder.append("var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject" + id + ";\n");
-									if (USE_TO_STRING) {
-										scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n");
-									} else {
-										scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response" + id + ";\n");
-									}
-									scriptBuilder.append(UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n");
-									scriptBuilder.append(""
-											+ "})();\n"
-										);
-									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
 									try {
 										scriptEngine.eval(scriptBuilder.toString());
-									} finally {
-										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
+									} catch (Exception se) {
+										LOGGER.error("Script callback fail", se);
+										context.fail(se);
 									}
 								} finally {
-									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, null); // Memsafe null-set
-									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "callbackObject" + id);
-									if (!USE_TO_STRING) {
-										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
-										scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
-									}
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
 								}
-							} catch (Exception se) {
-								LOGGER.error("Script callback fail", se);
-								context.fail(new IOException(se));
+							} finally {
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, null); // Memsafe null-set
+								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "callbackObject" + id);
+								if (!USE_TO_STRING) {
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response" + id, null); // Memsafe null-set
+									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response" + id);
+								}
 							}
 						}
 					});
@@ -375,7 +374,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							scriptEngine.eval(s);
 						} catch (Exception se) {
 							LOGGER.error("Script error: {}", s, se);
-							endManager.fail(new IOException(se));
+							endManager.fail(se);
 						}
 					} finally {
 						scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
@@ -469,7 +468,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 										scriptEngine.eval(s);
 									} catch (Exception se) {
 										LOGGER.error("Script error: {}", s, se);
-										endManager.fail(new IOException(se));
+										endManager.fail(se);
 									}
 								} finally {
 									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
