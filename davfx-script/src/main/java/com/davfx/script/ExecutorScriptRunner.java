@@ -64,15 +64,15 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		try {
 			scriptEngine.eval(ScriptUtils.functions());
 			scriptEngine.eval(""
-					+ "var " + UNICITY_PREFIX + "context;"
-					+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;"
-					+ "var " + UNICITY_PREFIX + "callbacks = {};"
+					+ "var " + UNICITY_PREFIX + "context;\n"
+					+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;\n"
+					+ "var " + UNICITY_PREFIX + "callbacks = {};\n"
 				);
 			
 			if (USE_TO_STRING) {
 				scriptEngine.eval(""
-						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };"
-						+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };"
+						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };\n"
+						+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };\n"
 					);
 			} else {
 				scriptEngine.eval(""
@@ -103,7 +103,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							+ "if (typeof o == \"boolean\") {"
 								+ "return " + ExecutorScriptRunner.class.getName() + ".jsonBoolean(o);"
 							+ "}"
-						+ "};"
+						+ "};\n"
 					+ "var " + UNICITY_PREFIX + "convertTo = function(o) {"
 						+ "if (!o) {"
 							+ "return null;"
@@ -131,7 +131,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							+ "return null;"
 						+ "}"
 						+ "return null;"
-					+ "};");
+					+ "};\n");
 			}
 		} catch (Exception se) {
 			LOGGER.error("Could not initialize script engine", se);
@@ -255,22 +255,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							}
 							scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject" + id, callbackObject);
 							try {
-								StringBuilder scriptBuilder = new StringBuilder();
-								scriptBuilder.append("(function() {\n");
-								scriptBuilder.append("var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject" + id + ";\n");
-								if (USE_TO_STRING) {
-									scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n");
-								} else {
-									scriptBuilder.append("var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response" + id + ";\n");
-								}
-								scriptBuilder.append(UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n");
-								scriptBuilder.append(""
-										+ "})();\n"
-									);
+								String script = "(function() {\n"
+									+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject" + id + ";\n"
+									+ (USE_TO_STRING ?
+											"var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n"
+											:
+											"var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response" + id + ";\n"
+										)
+									+ UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n"
+									+ "})();\n";
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
 								try {
 									try {
-										scriptEngine.eval(scriptBuilder.toString());
+										scriptEngine.eval(script);
 									} catch (Exception se) {
 										LOGGER.error("Script callback fail", se);
 										context.fail(se);
@@ -364,16 +361,12 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				EndManager endManager = new EndManager(end);
 				endManager.inc();
 				try {
-					StringBuilder scriptBuilder = new StringBuilder();
-					scriptBuilder.append(script);
-					
-					String s = scriptBuilder.toString();
 					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", endManager);
 					try {
 						try {
-							scriptEngine.eval(s);
+							scriptEngine.eval(script);
 						} catch (Exception se) {
-							LOGGER.error("Script error: {}", s, se);
+							LOGGER.error("Script error: {}", script, se);
 							endManager.fail(se);
 						}
 					} finally {
@@ -427,12 +420,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new SyncInternal(syncFunction));
 								bindingsToRemove.add(functionObjectVar);
 								
-								scriptBuilder.append(""
-											+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
-											+ "var " + function + " = function(p) {\n"
-												+ "return " + UNICITY_PREFIX + "convertTo(" + varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "convertFrom(p)));\n"
-											+ "};\n"
-										);
+								scriptBuilder.append("var ").append(varFunctionObjectVar).append(" = ").append(functionObjectVar).append(";\n"
+										+ "var ").append(function).append(" = function(p) {\n"
+												+ "return " + UNICITY_PREFIX + "convertTo(").append(varFunctionObjectVar).append(".call(" + UNICITY_PREFIX + "convertFrom(p)));\n"
+										+ "};\n");
 							}
 	
 							for (Map.Entry<String, AsyncScriptFunction> e : asyncFunctions.entrySet()) {
@@ -447,18 +438,14 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(functionObjectVar, new AsyncInternal(asyncFunction));
 								bindingsToRemove.add(functionObjectVar);
 
-								scriptBuilder.append(""
-											+ "var " + varFunctionObjectVar + " = " + functionObjectVar + ";\n"
-											+ "var " + function + " = function(p, callback) {\n"
-												+ varFunctionObjectVar + ".call(" + UNICITY_PREFIX + "context, " + UNICITY_PREFIX + "convertFrom(p), function(r) { callback(" + UNICITY_PREFIX + "convertTo(r)); });\n"
-											+ "};\n"
-										);
+								scriptBuilder.append("var ").append(varFunctionObjectVar).append(" = ").append(functionObjectVar).append(";\n"
+										+ "var ").append(function).append(" = function(p, callback) {\n")
+											.append(varFunctionObjectVar).append(".call(" + UNICITY_PREFIX + "context, " + UNICITY_PREFIX + "convertFrom(p), function(r) { callback(" + UNICITY_PREFIX + "convertTo(r)); });\n"
+										+ "};\n");
 							}
 							
 							scriptBuilder.append(script);
-							scriptBuilder.append(""
-									+ "})();"
-								);
+							scriptBuilder.append("})();");
 							
 							String s = scriptBuilder.toString();
 							try {
