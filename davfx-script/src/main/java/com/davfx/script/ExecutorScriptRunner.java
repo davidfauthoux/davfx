@@ -48,94 +48,99 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	}
 	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
 	
-	private final ScriptEngine scriptEngine;
+	private ScriptEngine scriptEngine;
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 	private int nextUnicityId = 0;
 
 	public ExecutorScriptRunner() {
-		ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
+		execute(new Runnable() {
+			@Override
+			public void run() {
+				ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
+				
+				scriptEngine = scriptEngineManager.getEngineByName(ENGINE_NAME);
+				if (scriptEngine == null) {
+					throw new IllegalArgumentException("Bad engine: " + ENGINE_NAME);
+				}
+				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
 		
-		scriptEngine = scriptEngineManager.getEngineByName(ENGINE_NAME);
-		if (scriptEngine == null) {
-			throw new IllegalArgumentException("Bad engine: " + ENGINE_NAME);
-		}
-		LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
-
-		try {
-			scriptEngine.eval(ScriptUtils.functions());
-			scriptEngine.eval(""
-					+ "var " + UNICITY_PREFIX + "context;\n"
-					+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;\n"
-					+ "var " + UNICITY_PREFIX + "callbacks = {};\n"
-				);
-			
-			if (USE_TO_STRING) {
-				scriptEngine.eval(""
-						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };\n"
-						+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };\n"
-					);
-			} else {
-				scriptEngine.eval(""
-						+ "var " + UNICITY_PREFIX + "convertFrom = function(o) {"
-							+ "if (!o) {"
+				try {
+					scriptEngine.eval(ScriptUtils.functions());
+					scriptEngine.eval(""
+							+ "var " + UNICITY_PREFIX + "context;\n"
+							+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;\n"
+							+ "var " + UNICITY_PREFIX + "callbacks = {};\n"
+						);
+					
+					if (USE_TO_STRING) {
+						scriptEngine.eval(""
+								+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };\n"
+								+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };\n"
+							);
+					} else {
+						scriptEngine.eval(""
+								+ "var " + UNICITY_PREFIX + "convertFrom = function(o) {"
+									+ "if (!o) {"
+										+ "return null;"
+									+ "}"
+									+ "if (o instanceof Array) {"
+										+ "var p = new com.google.gson.JsonArray();"
+										+ "for (k in o) {"
+											+ "p.add(" + UNICITY_PREFIX + "convertFrom(o[k]));"
+										+ "}"
+										+ "return p;"
+									+ "}"
+									+ "if (o instanceof Object) {"
+										+ "var p = new com.google.gson.JsonObject();"
+										+ "for (k in o) {"
+											+ "p.add(k, " + UNICITY_PREFIX + "convertFrom(o[k]));"
+										+ "}"
+										+ "return p;"
+									+ "}"
+									+ "if (typeof o == \"string\") {"
+										+ "return " + ExecutorScriptRunner.class.getName() + ".jsonString(o);"
+									+ "}"
+									+ "if (typeof o == \"number\") {"
+										+ "return " + ExecutorScriptRunner.class.getName() + ".jsonNumber(o);"
+									+ "}"
+									+ "if (typeof o == \"boolean\") {"
+										+ "return " + ExecutorScriptRunner.class.getName() + ".jsonBoolean(o);"
+									+ "}"
+								+ "};\n"
+							+ "var " + UNICITY_PREFIX + "convertTo = function(o) {"
+								+ "if (!o) {"
+									+ "return null;"
+								+ "}"
+								+ "if (o.isJsonObject()) {"
+									+ "var i = o.entrySet().iterator();"
+									+ "var p = {};"
+									+ "while (i.hasNext()) {"
+										+ "var e = i.next();"
+										+ "p[e.getKey()] = " + UNICITY_PREFIX + "convertTo(e.getValue());"
+									+ "}"
+									+ "return p;"
+								+ "}"
+								+ "if (o.isJsonPrimitive()) {"
+									+ "var oo = o.getAsJsonPrimitive();"
+									+ "if (oo.isString()) {"
+										+ "return '' + oo.getAsString();" // ['' +] looks to be necessary
+									+ "}"
+									+ "if (oo.isNumber()) {"
+										+ "return oo.getAsDouble();" //TODO Check long precision??? 
+									+ "}"
+									+ "if (oo.isBoolean()) {"
+										+ "return oo.getAsBoolean();"
+									+ "}"
+									+ "return null;"
+								+ "}"
 								+ "return null;"
-							+ "}"
-							+ "if (o instanceof Array) {"
-								+ "var p = new com.google.gson.JsonArray();"
-								+ "for (k in o) {"
-									+ "p.add(" + UNICITY_PREFIX + "convertFrom(o[k]));"
-								+ "}"
-								+ "return p;"
-							+ "}"
-							+ "if (o instanceof Object) {"
-								+ "var p = new com.google.gson.JsonObject();"
-								+ "for (k in o) {"
-									+ "p.add(k, " + UNICITY_PREFIX + "convertFrom(o[k]));"
-								+ "}"
-								+ "return p;"
-							+ "}"
-							+ "if (typeof o == \"string\") {"
-								+ "return " + ExecutorScriptRunner.class.getName() + ".jsonString(o);"
-							+ "}"
-							+ "if (typeof o == \"number\") {"
-								+ "return " + ExecutorScriptRunner.class.getName() + ".jsonNumber(o);"
-							+ "}"
-							+ "if (typeof o == \"boolean\") {"
-								+ "return " + ExecutorScriptRunner.class.getName() + ".jsonBoolean(o);"
-							+ "}"
-						+ "};\n"
-					+ "var " + UNICITY_PREFIX + "convertTo = function(o) {"
-						+ "if (!o) {"
-							+ "return null;"
-						+ "}"
-						+ "if (o.isJsonObject()) {"
-							+ "var i = o.entrySet().iterator();"
-							+ "var p = {};"
-							+ "while (i.hasNext()) {"
-								+ "var e = i.next();"
-								+ "p[e.getKey()] = " + UNICITY_PREFIX + "convertTo(e.getValue());"
-							+ "}"
-							+ "return p;"
-						+ "}"
-						+ "if (o.isJsonPrimitive()) {"
-							+ "var oo = o.getAsJsonPrimitive();"
-							+ "if (oo.isString()) {"
-								+ "return '' + oo.getAsString();" // ['' +] looks to be necessary
-							+ "}"
-							+ "if (oo.isNumber()) {"
-								+ "return oo.getAsDouble();" //TODO Check long precision??? 
-							+ "}"
-							+ "if (oo.isBoolean()) {"
-								+ "return oo.getAsBoolean();"
-							+ "}"
-							+ "return null;"
-						+ "}"
-						+ "return null;"
-					+ "};\n");
+							+ "};\n");
+					}
+				} catch (Exception se) {
+					LOGGER.error("Could not initialize script engine", se);
+				}
 			}
-		} catch (Exception se) {
-			LOGGER.error("Could not initialize script engine", se);
-		}
+		});
 	}
 	
 	@Override

@@ -1,0 +1,3 @@
+com.sun.phobos.script.javascript.RhinoScriptEngineFactory
+com.sun.phobos.script.javascript.EmbeddedRhinoScriptEngineFactory
+lu.flier.script.V8ScriptEngineFactory
