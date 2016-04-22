@@ -45,8 +45,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	static {
 		LOGGER.debug("Engine: {}", ENGINE_NAME);
 	}
-	public static final String CALL_FUNCTION_NAME = CONFIG.getString("ninio.script.call");
-	public static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
+	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
 	
 	private final ScriptEngine scriptEngine;
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
