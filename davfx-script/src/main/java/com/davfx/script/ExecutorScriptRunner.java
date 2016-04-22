@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
@@ -192,11 +193,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				request = (JsonElement) requestAsObject;
 			}
 			
-			LOGGER.info("Called sync: {}", request);
-			
 			JsonElement response = syncFunction.call(request);
-
-			LOGGER.info("Sync -> {}", response);
 
 			if (USE_TO_STRING) {
 				return (response == null) ? "null" : response.toString();
@@ -220,8 +217,6 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				request = (JsonElement) requestAsObject;
 			}
 
-			LOGGER.info("Called async: {}", request);
-
 			context.inc();
 			
 			asyncFunction.call(request, new AsyncScriptFunction.Callback() {
@@ -232,7 +227,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				}
 				@Override
 				public void done() {
-					executorService.execute(new Runnable() {
+					execute(new Runnable() {
 						@Override
 						public void run() {
 							if (decCalled) {
@@ -245,9 +240,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				}
 				@Override
 				public void handle(final JsonElement response) {
-					LOGGER.info("Async -> {}", response);
-
-					executorService.execute(new Runnable() {
+					execute(new Runnable() {
 						@Override
 						public void run() {
 							if (context.isEnded()) {
@@ -299,7 +292,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	@Override
 	public void register(final String function, final SyncScriptFunction syncFunction) {
-		executorService.execute(new Runnable() {
+		execute(new Runnable() {
 			@Override
 			public void run() {
 				String id = String.valueOf(nextUnicityId);
@@ -329,7 +322,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	@Override
 	public void register(final String function, final AsyncScriptFunction asyncFunction) {
-		executorService.execute(new Runnable() {
+		execute(new Runnable() {
 			@Override
 			public void run() {
 				String id = String.valueOf(nextUnicityId);
@@ -359,10 +352,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 
 	@Override
 	public void prepare(final String script, final ScriptRunner.End end) {
-		if (executorService.isShutdown()) {
-			return;
-		}
-		executorService.execute(new Runnable() {
+		execute(new Runnable() {
 			@Override
 			public void run() {
 				EndManager endManager = new EndManager(end);
@@ -402,10 +392,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			
 			@Override
 			public void eval(final String script, final End end) {
-				if (executorService.isShutdown()) {
-					return;
-				}
-				executorService.execute(new Runnable() {
+				execute(new Runnable() {
 					@Override
 					public void run() {
 						final List<String> bindingsToRemove = new LinkedList<>();
@@ -494,4 +481,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		return new JsonPrimitive(b);
 	}
 	
+	private void execute(Runnable r) {
+		try {
+			executorService.execute(r);
+		} catch (RejectedExecutionException ree) {
+		}
+	}
 }
