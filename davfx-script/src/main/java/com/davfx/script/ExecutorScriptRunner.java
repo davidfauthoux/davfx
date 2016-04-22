@@ -192,11 +192,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				request = (JsonElement) requestAsObject;
 			}
 			
-			LOGGER.trace("Called sync: {}", request);
+			LOGGER.info("Called sync: {}", request);
 			
 			JsonElement response = syncFunction.call(request);
 
-			LOGGER.trace("Sync -> {}", response);
+			LOGGER.info("Sync -> {}", response);
 
 			if (USE_TO_STRING) {
 				return (response == null) ? "null" : response.toString();
@@ -220,7 +220,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				request = (JsonElement) requestAsObject;
 			}
 
-			LOGGER.trace("Called async: {}", request);
+			LOGGER.info("Called async: {}", request);
 
 			context.inc();
 			
@@ -245,7 +245,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				}
 				@Override
 				public void handle(final JsonElement response) {
-					LOGGER.trace("Async -> {}", response);
+					LOGGER.info("Async -> {}", response);
 
 					executorService.execute(new Runnable() {
 						@Override
