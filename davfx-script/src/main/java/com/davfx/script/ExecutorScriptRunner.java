@@ -65,7 +65,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
 		
 				try {
-					scriptEngine.eval(ScriptUtils.functions());
+					//%% scriptEngine.eval(ScriptUtils.functions());
 					scriptEngine.eval(""
 							+ "var " + UNICITY_PREFIX + "context;\n"
 							+ "var " + UNICITY_PREFIX + "nextUnicityId = 0;\n"

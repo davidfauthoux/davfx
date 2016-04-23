@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 
+@Deprecated
 public final class ScriptUtils {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ScriptUtils.class);
 
