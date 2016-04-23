@@ -144,4 +144,26 @@ public class ScriptTest {
 		}
 	}
 
+	@Test
+	public void testError() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			final Lock<String, Exception> lock = new Lock<>();
+			
+			ScriptRunner.Engine engine = runner.engine();
+			engine.eval("err;", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.set(e.getMessage());
+				}
+				@Override
+				public void ended() {
+					Assertions.fail("ended should not be called");
+					lock.set(null);
+				}
+			});
+			
+			Assertions.assertThat(lock.waitFor().toString()).isNotNull();
+		}
+	}
+
 }
