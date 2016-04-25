@@ -6,6 +6,9 @@ import java.util.List;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 
+import com.davfx.script.ExecutorScriptRunner;
+import com.davfx.util.LibraryLoader;
+
 @SuppressWarnings("serial")
 public class V8ScriptEngineFactory implements ScriptEngineFactory
 {
@@ -15,7 +18,7 @@ public class V8ScriptEngineFactory implements ScriptEngineFactory
 
     static
     {
-    	System.loadLibrary("jav8");
+    	LibraryLoader.load(ExecutorScriptRunner.class.getClassLoader(), "lib/jav8");
         // NarSystem.loadLibrary();
         names = new ArrayList<String>()
             {

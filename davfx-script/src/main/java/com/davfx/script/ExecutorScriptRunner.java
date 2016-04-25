@@ -28,10 +28,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 
 	private static final Config CONFIG = ConfigFactory.load(ExecutorScriptRunner.class.getClassLoader());
 	
-	private static final String ENGINE_NAME = CONFIG.getString("ninio.script.engine");
-	static {
-		LOGGER.debug("Engine: {}", ENGINE_NAME);
-	}
+	private static final String DEFAULT_ENGINE_NAME = CONFIG.getString("ninio.script.engine");
 
 	private static final boolean USE_TO_STRING;
 	static {
@@ -53,14 +50,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 
 	public ExecutorScriptRunner() {
+		this(DEFAULT_ENGINE_NAME);
+	}
+	public ExecutorScriptRunner(final String engineName) {
+		LOGGER.debug("Engine: {}", engineName);
+
 		execute(new Runnable() {
 			@Override
 			public void run() {
 				ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
 				
-				scriptEngine = scriptEngineManager.getEngineByName(ENGINE_NAME);
+				scriptEngine = scriptEngineManager.getEngineByName(engineName);
 				if (scriptEngine == null) {
-					throw new IllegalArgumentException("Bad engine: " + ENGINE_NAME);
+					throw new IllegalArgumentException("Bad engine: " + engineName);
 				}
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
 		
