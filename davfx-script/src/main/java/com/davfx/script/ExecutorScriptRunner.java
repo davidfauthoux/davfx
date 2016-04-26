@@ -20,7 +20,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 import com.typesafe.config.Config;
-import com.typesafe.config.ConfigException;
 import com.typesafe.config.ConfigFactory;
 
 public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
@@ -30,6 +29,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	private static final String DEFAULT_ENGINE_NAME = CONFIG.getString("ninio.script.engine");
 
+	/*
 	private static final boolean USE_TO_STRING;
 	static {
 		String mode = CONFIG.getString("ninio.script.mode");
@@ -43,6 +43,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			throw new ConfigException.BadValue("script.mode", "Invalid mode, only allowed: json|string");
 		}
 	}
+	*/
 	
 	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
 	
@@ -81,11 +82,12 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							+ "var " + UNICITY_PREFIX + "callbacks = {};\n"
 						);
 					
-					if (USE_TO_STRING) {
-						scriptEngine.eval(""
-								+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };\n"
-								+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };\n"
-							);
+					// if (USE_TO_STRING) {
+					scriptEngine.eval(""
+							+ "var " + UNICITY_PREFIX + "convertFrom = function(o) { if (!o) return null; return JSON.stringify(o); };\n"
+							+ "var " + UNICITY_PREFIX + "convertTo = function(o) { if (!o) return null; return JSON.parse(o); };\n"
+						);
+					/*
 					} else {
 						scriptEngine.eval(""
 								+ "var " + UNICITY_PREFIX + "convertFrom = function(o) {"
@@ -135,7 +137,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 										+ "return '' + oo.getAsString();" // ['' +] looks to be necessary
 									+ "}"
 									+ "if (oo.isNumber()) {"
-										+ "return oo.getAsDouble();" //TODO Check long precision??? 
+										+ "return oo.getAsDouble();" //TO DO Check long precision??? 
 									+ "}"
 									+ "if (oo.isBoolean()) {"
 										+ "return oo.getAsBoolean();"
@@ -145,6 +147,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								+ "return null;"
 							+ "};\n");
 					}
+					*/
 				} catch (Exception se) {
 					LOGGER.error("Could not initialize script engine", se);
 				}
@@ -201,19 +204,23 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 		public Object call(Object requestAsObject) {
 			JsonElement request;
-			if (USE_TO_STRING) {
-				request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
+			// if (USE_TO_STRING) {
+			request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
+			/*
 			} else {
 				request = (JsonElement) requestAsObject;
 			}
+			*/
 			
 			JsonElement response = syncFunction.call(request);
 
-			if (USE_TO_STRING) {
-				return (response == null) ? "null" : response.toString();
+			// if (USE_TO_STRING) {
+			return (response == null) ? "null" : response.toString();
+			/*
 			} else {
 				return response;
 			}
+			*/
 		}
 	}
 	
@@ -225,11 +232,13 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 		public void call(final EndManager context, Object requestAsObject, final Object callbackObject) {
 			JsonElement request;
-			if (USE_TO_STRING) {
-				request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
+			// if (USE_TO_STRING) {
+			request = (requestAsObject == null) ? null : new JsonParser().parse((String) requestAsObject);
+			/*
 			} else {
 				request = (JsonElement) requestAsObject;
 			}
+			*/
 
 			context.inc();
 			
@@ -262,18 +271,20 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								return;
 							}
 
+							/*
 							if (!USE_TO_STRING) {
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response", response);
 							}
+							*/
 							scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject", callbackObject);
 							try {
 								String script = "(function() {\n"
 									+ "var " + UNICITY_PREFIX + "f = " + UNICITY_PREFIX + "callbackObject;\n"
-									+ (USE_TO_STRING ?
+									+ // (USE_TO_STRING ?
 											"var " + UNICITY_PREFIX + "r = " + ((response == null) ? "null" : new JsonPrimitive(response.toString()).toString()) + ";\n"
-											:
-											"var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response;\n"
-										)
+										// :
+										// "var " + UNICITY_PREFIX + "r = " + UNICITY_PREFIX + "response;\n"
+										// )
 									+ UNICITY_PREFIX + "f(" + UNICITY_PREFIX + "r);\n"
 									+ "})();\n";
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
@@ -290,10 +301,12 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							} finally {
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "callbackObject", null); // Memsafe null-set
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "callbackObject");
+								/*
 								if (!USE_TO_STRING) {
 									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "response", null); // Memsafe null-set
 									scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "response");
 								}
+								*/
 							}
 						}
 					});
