@@ -22,7 +22,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package _.com.sun.phobos.script.javascript;
+package com.sun.phobos.script.javascript;
 import javax.script.*;
 
 import org.mozilla.javascript.*;

@@ -14,7 +14,7 @@ public class PerfTest {
 	
 	private static void evalSync(String name) throws Exception {
 		long min = Long.MAX_VALUE;
-		for (int k = 0; k < 5; k++) {
+		for (int k = 0; k < 3; k++) {
 			try (ScriptRunner runner = new ExecutorScriptRunner(name)) {
 				long n = 1_000L;
 				long t = System.currentTimeMillis();
@@ -55,7 +55,7 @@ public class PerfTest {
 	@Test
 	public void testSync() throws Exception {
 		evalSync("rhino");
-		evalSync("nashorn");
+		evalSync("js");
 		evalSync("jav8");
 	}
 

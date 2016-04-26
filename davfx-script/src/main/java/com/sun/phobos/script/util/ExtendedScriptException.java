@@ -21,51 +21,55 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
- 
-package _.com.sun.phobos.script.javascript;
 
-import javax.script.*;
+package com.sun.phobos.script.util;
 
-import _.com.sun.phobos.script.util.*;
-
-import java.io.*;
+import javax.script.ScriptException;
 
 /**
- * Embedded javascript interpreter.
+ * An extension of javax.script.ScriptException that allows
+ * the cause of an exception to be set.
  */
-public class EmbeddedRhinoScriptEngine extends RhinoScriptEngine {
+@SuppressWarnings("serial")
+public class ExtendedScriptException extends ScriptException {
     
-    protected DeTagifier detagifier;
+    private Throwable cause;
     
-    public EmbeddedRhinoScriptEngine() {
-        detagifier = new DeTagifier("context.getWriter().write(\"",
-                                    "\");\n",
-                                    "context.getWriter().write(",
-                                    ");\n");
+    public ExtendedScriptException(
+            Throwable cause,
+            String message,
+            String fileName,
+            int lineNumber,
+            int columnNumber) {
+        super(message, fileName, lineNumber, columnNumber);
+        this.cause = cause;
+    }
+
+    public ExtendedScriptException(String s) {
+        super(s);
     }
     
-    protected Reader preProcessScriptSource(Reader reader) throws ScriptException {
-        try {
-            String s = detagifier.parse(reader);
-            return new StringReader(s);
-        }
-        catch (IOException ee) {
-            throw new ScriptException(ee);
-        }
+    public ExtendedScriptException(Exception e) {
+        super(e);
     }
     
-    public static void main(String[] args) throws Exception {
-        if (args.length == 0) {
-            System.out.println("No file specified");
-            return;
-        }
-        
-        InputStreamReader r = new InputStreamReader(new FileInputStream(args[0]));
-        ScriptEngine engine = new EmbeddedRhinoScriptEngine();
-        
-        SimpleScriptContext context = new SimpleScriptContext();
-        engine.put(ScriptEngine.FILENAME, args[0]);
-        engine.eval(r, context);
-        context.getWriter().flush();
+    public ExtendedScriptException(String message, String fileName, int lineNumber) {
+        super(message, fileName, lineNumber);
+    }
+    
+    public ExtendedScriptException(Throwable cause, String message, String fileName, int lineNumber) {
+        super(message, fileName, lineNumber);
+        this.cause = cause;
+    }
+
+    public ExtendedScriptException(String message,
+            String fileName,
+            int lineNumber,
+            int columnNumber) {
+        super(message, fileName, lineNumber, columnNumber);
+    }
+    
+    public Throwable getCause() {
+        return cause;
     }
 }

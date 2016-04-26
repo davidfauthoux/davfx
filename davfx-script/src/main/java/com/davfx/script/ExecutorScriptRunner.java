@@ -58,12 +58,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		execute(new Runnable() {
 			@Override
 			public void run() {
-				ScriptEngineManager scriptEngineManager = new ScriptEngineManager();
-				
-				scriptEngine = scriptEngineManager.getEngineByName(engineName);
-				if (scriptEngine == null) {
+				if (engineName.equals("rhino")) {
+					scriptEngine = new com.sun.phobos.script.javascript.RhinoScriptEngineFactory().getScriptEngine();
+				} else if (engineName.equals("jav8")) {
+					scriptEngine = new lu.flier.script.V8ScriptEngineFactory().getScriptEngine();
+				} else if (engineName.equals("js")) {
+					scriptEngine = new ScriptEngineManager().getEngineByName(engineName);
+					if (scriptEngine == null) {
+						throw new IllegalArgumentException("Bad engine: " + engineName);
+					}
+				} else {
 					throw new IllegalArgumentException("Bad engine: " + engineName);
 				}
+				
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
 		
 				try {

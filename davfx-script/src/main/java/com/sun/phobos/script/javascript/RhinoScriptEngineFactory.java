@@ -22,25 +22,35 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package _.com.sun.phobos.script.javascript;
+package com.sun.phobos.script.javascript;
 import javax.script.*;
 
-import _.com.sun.phobos.script.util.*;
+import org.mozilla.javascript.*;
+
+import com.sun.phobos.script.util.*;
 
 import java.util.*;
 
 /**
- * Factory to create EmbeddedRhinoScriptEngine
+ * Factory to create RhinoScriptEngine
  *
+ * @version 1.0
+ * @author Mike Grogan
+ * @since 1.6
  */
-public class EmbeddedRhinoScriptEngineFactory extends ScriptEngineFactoryBase {
+public class RhinoScriptEngineFactory extends ScriptEngineFactoryBase {
+    
+    public static final String USE_INTERPRETER_SYSTEM_PROPERTY = "com.sun.phobos.javascript.useInterpreter";
+    
+    private Properties properties;
+    private boolean initialized;
+    private ContextFactory.Listener listener;
 
-    @SuppressWarnings("unused")
-	private Properties properties;
-    @SuppressWarnings("unused")
-	private boolean initialized;
+    public RhinoScriptEngineFactory() {
+    }
         
-    public EmbeddedRhinoScriptEngineFactory() {
+    public RhinoScriptEngineFactory(ContextFactory.Listener listener) {
+        this.listener = listener;
     }
     
     public List<String> getExtensions() {
@@ -57,13 +67,13 @@ public class EmbeddedRhinoScriptEngineFactory extends ScriptEngineFactoryBase {
     
     public Object getParameter(String key) {
         if (key.equals(ScriptEngine.NAME)) {
-            return "embedded-javascript";
+            return "javascript";
         } else if (key.equals(ScriptEngine.ENGINE)) {
             return "Mozilla Rhino";
         } else if (key.equals(ScriptEngine.ENGINE_VERSION)) {
-            return "1.6 release 2";
+            return "1.6R7";
         } else if (key.equals(ScriptEngine.LANGUAGE)) {
-            return "EmbeddedECMAScript";
+            return "ECMAScript";
         } else if (key.equals(ScriptEngine.LANGUAGE_VERSION)) {
             return "1.6";
         } else if (key.equals("THREADING")) {
@@ -72,17 +82,63 @@ public class EmbeddedRhinoScriptEngineFactory extends ScriptEngineFactoryBase {
             throw new IllegalArgumentException("Invalid key");
         }
     }
-
-    public void setProperties(Properties properties) {
-        this.properties = properties;
-    }
-
+    
     public ScriptEngine getScriptEngine() {
-        EmbeddedRhinoScriptEngine ret = new EmbeddedRhinoScriptEngine();
+        RhinoScriptEngine ret = new RhinoScriptEngine();
         ret.setEngineFactory(this);
         return ret;
     }
-            
+    
+    public void initialize() {
+        if (!initialized) {
+            if ("true".equals(getProperty(USE_INTERPRETER_SYSTEM_PROPERTY))) {
+                if (!ContextFactory.hasExplicitGlobal()) {
+                    ContextFactory.initGlobal(new ContextFactory() {
+                        protected Context makeContext() {
+                            Context cx = super.makeContext();
+                            cx.setOptimizationLevel(-1);
+                            return cx;
+                        }
+                    });
+                }
+            }
+            if (listener != null) {
+                ContextFactory.getGlobal().addListener(listener);
+            }
+            initialized = true;
+        }
+    }
+
+    public void destroy() {
+        if (initialized) {
+            if (listener != null) {
+                ContextFactory.getGlobal().removeListener(listener);
+            }
+            initialized = false;
+        }
+    }
+        
+    public void setProperties(Properties properties) {
+        this.properties = properties;
+    }
+    
+    private String getProperty(String key) {
+        String value = null;
+        if (properties != null) {
+            value = properties.getProperty(key);
+        }
+        if (value == null) {
+            value = System.getProperty(key);
+        }
+        return value;
+    }
+
+    @SuppressWarnings("unused")
+	private String getProperty(String name, String defaultValue) {
+        String s = getProperty(name);
+        return (s == null ? defaultValue : s);
+    }
+    
     public String getMethodCallSyntax(String obj, String method, String... args) {
         
         String ret = obj + "." + method + "(";
@@ -118,28 +174,34 @@ public class EmbeddedRhinoScriptEngineFactory extends ScriptEngineFactoryBase {
     }
     
     public static void main(String[] args) {
-        EmbeddedRhinoScriptEngineFactory fact = new EmbeddedRhinoScriptEngineFactory();
+        RhinoScriptEngineFactory fact = new RhinoScriptEngineFactory();
         System.out.println(fact.getParameter(ScriptEngine.ENGINE_VERSION));
     }
-    
+
     private static List<String> names;
     private static List<String> mimeTypes;
     private static List<String> extensions;
     
     static {
-        names = new ArrayList<String>(6);
-        names.add("ejs");
-        names.add("EmbeddedJavaScript");
-        names.add("embeddedjavascript");
+        names = new ArrayList<String>(7);
+        names.add("rhino-nonjdk");
+        names.add("js");
+        names.add("rhino");
+        names.add("JavaScript");
+        names.add("javascript");
+        names.add("ECMAScript");
+        names.add("ecmascript");
         names = Collections.unmodifiableList(names);
 
         mimeTypes = new ArrayList<String>(4);
-        mimeTypes.add("application/embeddedjavascript");
-        mimeTypes.add("text/embeddedjavascript");
+        mimeTypes.add("application/javascript");
+        mimeTypes.add("application/ecmascript");
+        mimeTypes.add("text/javascript");
+        mimeTypes.add("text/ecmascript");
         mimeTypes = Collections.unmodifiableList(mimeTypes);
 
         extensions = new ArrayList<String>(1);
-        extensions.add("ejs");
+        extensions.add("js");
         extensions = Collections.unmodifiableList(extensions);
     }
 }

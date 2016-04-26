@@ -21,55 +21,51 @@
  * OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
+ 
+package com.sun.phobos.script.javascript;
 
-package _.com.sun.phobos.script.util;
+import javax.script.*;
 
-import javax.script.ScriptException;
+import com.sun.phobos.script.util.*;
+
+import java.io.*;
 
 /**
- * An extension of javax.script.ScriptException that allows
- * the cause of an exception to be set.
+ * Embedded javascript interpreter.
  */
-@SuppressWarnings("serial")
-public class ExtendedScriptException extends ScriptException {
+public class EmbeddedRhinoScriptEngine extends RhinoScriptEngine {
     
-    private Throwable cause;
+    protected DeTagifier detagifier;
     
-    public ExtendedScriptException(
-            Throwable cause,
-            String message,
-            String fileName,
-            int lineNumber,
-            int columnNumber) {
-        super(message, fileName, lineNumber, columnNumber);
-        this.cause = cause;
-    }
-
-    public ExtendedScriptException(String s) {
-        super(s);
+    public EmbeddedRhinoScriptEngine() {
+        detagifier = new DeTagifier("context.getWriter().write(\"",
+                                    "\");\n",
+                                    "context.getWriter().write(",
+                                    ");\n");
     }
     
-    public ExtendedScriptException(Exception e) {
-        super(e);
+    protected Reader preProcessScriptSource(Reader reader) throws ScriptException {
+        try {
+            String s = detagifier.parse(reader);
+            return new StringReader(s);
+        }
+        catch (IOException ee) {
+            throw new ScriptException(ee);
+        }
     }
     
-    public ExtendedScriptException(String message, String fileName, int lineNumber) {
-        super(message, fileName, lineNumber);
-    }
-    
-    public ExtendedScriptException(Throwable cause, String message, String fileName, int lineNumber) {
-        super(message, fileName, lineNumber);
-        this.cause = cause;
-    }
-
-    public ExtendedScriptException(String message,
-            String fileName,
-            int lineNumber,
-            int columnNumber) {
-        super(message, fileName, lineNumber, columnNumber);
-    }
-    
-    public Throwable getCause() {
-        return cause;
+    public static void main(String[] args) throws Exception {
+        if (args.length == 0) {
+            System.out.println("No file specified");
+            return;
+        }
+        
+        InputStreamReader r = new InputStreamReader(new FileInputStream(args[0]));
+        ScriptEngine engine = new EmbeddedRhinoScriptEngine();
+        
+        SimpleScriptContext context = new SimpleScriptContext();
+        engine.put(ScriptEngine.FILENAME, args[0]);
+        engine.eval(r, context);
+        context.getWriter().flush();
     }
 }

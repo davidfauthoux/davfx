@@ -32,7 +32,7 @@
  * @author Roberto Chinnici
  */
 
-package _.com.sun.phobos.script.util;
+package com.sun.phobos.script.util;
 
 import java.io.Reader;
 import java.io.IOException;

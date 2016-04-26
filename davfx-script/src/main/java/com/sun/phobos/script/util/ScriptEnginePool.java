@@ -22,7 +22,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-package _.com.sun.phobos.script.util;
+package com.sun.phobos.script.util;
 
 import javax.script.*;
 import java.util.LinkedList;
