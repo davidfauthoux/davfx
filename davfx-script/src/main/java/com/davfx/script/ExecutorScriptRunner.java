@@ -244,10 +244,12 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			
 			asyncFunction.call(request, new AsyncScriptFunction.Callback() {
 				private boolean decCalled = false;
+				/*%%% MEM LEAK!!!!
 				@Override
 				protected void finalize() {
 					done();
 				}
+				*/
 				@Override
 				public void done() {
 					execute(new Runnable() {
