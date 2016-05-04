@@ -60,7 +60,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			@Override
 			public void run() {
 				if (engineName.equals("rhino")) {
-					scriptEngine = new com.sun.phobos.script.javascript.RhinoScriptEngineFactory().getScriptEngine();
+					scriptEngine = new com.sun.script.javascript.RhinoScriptEngineFactory().getScriptEngine();
 				} else if (engineName.equals("jav8")) {
 					scriptEngine = new lu.flier.script.V8ScriptEngineFactory().getScriptEngine();
 				} else if (engineName.equals("js")) {

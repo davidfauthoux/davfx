@@ -54,8 +54,8 @@ public class PerfTest {
 	
 	@Test
 	public void testSync() throws Exception {
-		evalSync("rhino");
 		evalSync("js");
+		evalSync("rhino");
 		evalSync("jav8");
 	}
 
