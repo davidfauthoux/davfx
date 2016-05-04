@@ -5,8 +5,10 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
@@ -15,7 +17,6 @@ import javax.script.ScriptEngineManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.davfx.util.ClassThreadFactory;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
@@ -48,13 +49,15 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
 	
 	private ScriptEngine scriptEngine;
-	private final ExecutorService executorService = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
+	private final ThreadPoolExecutor executorService; // = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 
 	public ExecutorScriptRunner() {
 		this(DEFAULT_ENGINE_NAME);
 	}
 	public ExecutorScriptRunner(final String engineName) {
 		LOGGER.debug("Engine: {}", engineName);
+
+		executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
 
 		execute(new Runnable() {
 			@Override
@@ -501,6 +504,8 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	}
 	
 	private void execute(Runnable r) {
+		int queueSize = executorService.getQueue().size();
+		LOGGER.debug("Queue size = {}", queueSize);
 		try {
 			executorService.execute(r);
 		} catch (RejectedExecutionException ree) {
