@@ -179,7 +179,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 
 							SimpleBindings bindings = new SimpleBindings();
 							scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
-							LOGGER.trace(">> Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
+							LOGGER.trace(">> Bindings = {}, evaluating {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet(), callbackObject);
 							bindings.put(UNICITY_PREFIX + "callbackObject", callbackObject);
 							bindings.put(UNICITY_PREFIX + "context", endManager);
 							try {
@@ -187,7 +187,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 									((Invocable) scriptEngine).invokeFunction(UNICITY_PREFIX + "callbackObject", response);
 									LOGGER.trace("<< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
 								} catch (Exception se) {
-									LOGGER.error("Script callback fail", se);
+									LOGGER.error("Script callback fail ({})", callbackObject, se);
 									endManager.fail(se);
 								}
 							} finally {
@@ -297,7 +297,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				@Override
 				public void run() {
 					if (initialBindings != null) {
-						LOGGER.debug("Bindings >>> {}", initialBindings.keySet());
+						LOGGER.trace("Bindings >>> {}", initialBindings.keySet());
 						bindings.putAll(initialBindings);
 					}
 				}
@@ -330,7 +330,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					try {
 						try {
 							scriptEngine.eval(s);
-							LOGGER.debug("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
+							LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
 						} catch (Exception se) {
 							LOGGER.error("Script error: {}", s, se);
 						}
@@ -381,7 +381,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					endManager.inc();
 					try {
 						scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
-						LOGGER.trace("> Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
+						LOGGER.trace("> Bindings = {}, evaluating {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet(), script);
 
 						bindings.put(UNICITY_PREFIX + "context", endManager);
 						try {
