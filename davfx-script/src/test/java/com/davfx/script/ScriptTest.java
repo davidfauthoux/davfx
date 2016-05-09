@@ -17,9 +17,10 @@ public class ScriptTest {
 	@Test
 	public void testSimpleSync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
 			final Lock<Object, Exception> lock = new Lock<>();
 			
-			runner.register("syncEcho1", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			engine.register("syncEcho1", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public Map<String, String> call(Map<String,String> request) {
 					LOGGER.debug("1 -------> {}", request);
@@ -29,7 +30,7 @@ public class ScriptTest {
 				}
 			});
 			
-			runner.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			engine.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public Map<String, String> call(Map<String,String> request) {
 					LOGGER.debug("2 -------> {}", request);
@@ -38,8 +39,8 @@ public class ScriptTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.eval("var echoed = syncEcho2(syncEcho1({'message':'bb'}));", new ScriptRunner.End() {
+			ScriptRunner.Engine subEngine = engine.sub();
+			subEngine.eval("var echoed = syncEcho2(syncEcho1({'message':'bb'}));", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -57,9 +58,10 @@ public class ScriptTest {
 	@Test
 	public void testSimpleSyncWithDouble() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
 			final Lock<Double, Exception> lock = new Lock<>();
 			
-			runner.register("syncEcho", new SyncScriptFunction<Map<String, Double>, Double>() {
+			engine.register("syncEcho", new SyncScriptFunction<Map<String, Double>, Double>() {
 				@Override
 				public Double call(Map<String, Double> request) {
 					double d = request.get("d");
@@ -68,8 +70,8 @@ public class ScriptTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.eval("var echoed = syncEcho({'d':1.23});", new ScriptRunner.End() {
+			ScriptRunner.Engine subEngine = engine.sub();
+			subEngine.eval("var echoed = syncEcho({'d':1.23});", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -213,9 +215,10 @@ public class ScriptTest {
 	@Test
 	public void testSync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
 			final Lock<Object, Exception> lock = new Lock<>();
 			
-			runner.register("syncEcho", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			engine.register("syncEcho", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public Map<String, String> call(Map<String, String> request) {
 					Map<String, String> o = new HashMap<>();
@@ -223,7 +226,7 @@ public class ScriptTest {
 					return o;
 				}
 			});
-			runner.prepare("var echoed = syncEcho({'message':'aa'});", new ScriptRunner.End() {
+			engine.eval("var echoed = syncEcho({'message':'aa'});", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -234,8 +237,8 @@ public class ScriptTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			ScriptRunner.Engine subEngine = engine.sub();
+			subEngine.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public Map<String, String> call(Map<String, String> request) {
 					Map<String, String> o = new HashMap<>();
@@ -243,14 +246,14 @@ public class ScriptTest {
 					return o;
 				}
 			});
-			engine.register("out", new SyncScriptFunction<Object, Void>() {
+			subEngine.register("out", new SyncScriptFunction<Object, Void>() {
 				@Override
 				public Void call(Object request) {
 					lock.set(request);
 					return null;
 				}
 			});
-			engine.eval("var echoed2 = syncEcho2({'message':'bb'});", new ScriptRunner.End() {
+			subEngine.eval("var echoed2 = syncEcho2({'message':'bb'});", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -260,7 +263,7 @@ public class ScriptTest {
 					LOGGER.debug("syncEcho2 end");
 				}
 			});
-			engine.eval("out(syncEcho(syncEcho2({'message':'bb'})));", new ScriptRunner.End() {
+			subEngine.eval("out(syncEcho(syncEcho2({'message':'bb'})));", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -271,16 +274,17 @@ public class ScriptTest {
 				}
 			});
 			
-			Assertions.assertThat(lock.waitFor().toString()).isEqualTo("{\"message\":\"synchEcho synchEcho2 bb\"}");
+			Assertions.assertThat(lock.waitFor().toString()).isEqualTo("{message=synchEcho synchEcho2 bb}");
 		}
 	}
 
 	@Test
 	public void testAsync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
 			final Lock<Object, Exception> lock = new Lock<>();
 			
-			runner.register("asyncEcho", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			engine.register("asyncEcho", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public void call(Map<String, String> o, Callback<Map<String, String>> callback) {
 					Map<String, String> m = new HashMap<>();
@@ -288,7 +292,7 @@ public class ScriptTest {
 					callback.handle(m);
 				}
 			});
-			runner.prepare("asyncEcho({'message':'aa'}, function(r) { });", new ScriptRunner.End() {
+			engine.eval("asyncEcho({'message':'aa'}, function(r) { });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -299,8 +303,8 @@ public class ScriptTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.register("asyncEcho2", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
+			ScriptRunner.Engine subEngine = engine.sub();
+			subEngine.register("asyncEcho2", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
 				public void call(Map<String, String> o, Callback<Map<String, String>> callback) {
 					Map<String, String> m = new HashMap<>();
@@ -308,14 +312,14 @@ public class ScriptTest {
 					callback.handle(m);
 				}
 			});
-			engine.register("out", new SyncScriptFunction<Object, Void>() {
+			subEngine.register("out", new SyncScriptFunction<Object, Void>() {
 				@Override
 				public Void call(Object request) {
 					lock.set(request);
 					return null;
 				}
 			});
-			engine.eval("asyncEcho2({'message':'bb'}, function(r) { });", new ScriptRunner.End() {
+			subEngine.eval("asyncEcho2({'message':'bb'}, function(r) { });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -325,7 +329,7 @@ public class ScriptTest {
 					LOGGER.debug("asyncEcho2 end");
 				}
 			});
-			engine.eval("asyncEcho2({'message':'bb'}, function(r) { asyncEcho(r, function(r2) { out(r2); }); });", new ScriptRunner.End() {
+			subEngine.eval("asyncEcho2({'message':'bb'}, function(r) { asyncEcho(r, function(r2) { out(r2); }); });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -336,7 +340,7 @@ public class ScriptTest {
 				}
 			});
 			
-			Assertions.assertThat(lock.waitFor().toString()).isEqualTo("{\"message\":\"asynchEcho asynchEcho2 bb\"}");
+			Assertions.assertThat(lock.waitFor().toString()).isEqualTo("{message=asynchEcho asynchEcho2 bb}");
 		}
 	}
 

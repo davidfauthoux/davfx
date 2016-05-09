@@ -1,7 +1,5 @@
 package com.davfx.script;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -293,13 +291,17 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	private final class InnerEngine implements Engine {
 		private final SimpleBindings bindings = new SimpleBindings();
-		private final Map<String, SyncScriptFunction<Object, Object>> syncFunctions = new LinkedHashMap<>();
-		private final Map<String, AsyncScriptFunction<Object, Object>> asyncFunctions = new LinkedHashMap<>();
 		
-		public InnerEngine(SimpleBindings initialBindings) {
-			if (initialBindings != null) {
-				bindings.putAll(initialBindings);
-			}
+		public InnerEngine(final SimpleBindings initialBindings) {
+			doExecute(new Runnable() {
+				@Override
+				public void run() {
+					if (initialBindings != null) {
+						LOGGER.debug("Bindings >>> {}", initialBindings.keySet());
+						bindings.putAll(initialBindings);
+					}
+				}
+			});
 		}
 		
 		@Override
@@ -309,11 +311,65 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		
 		@Override
 		public <T, U> void register(String function, SyncScriptFunction<T, U> syncFunction) {
-			syncFunctions.put(function, cast(syncFunction));
+			doExecute(new Runnable() {
+				@Override
+				public void run() {
+					StringBuilder scriptBuilder = new StringBuilder();
+		
+					String functionObjectVar = UNICITY_PREFIX + "function_" + function;
+					bindings.put(functionObjectVar, new SyncInternal(cast(syncFunction)));
+					
+					scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
+							+ "var ").append(function).append(" = function(p) {\n"
+								+ "return " + UNICITY_PREFIX + "functionVar_").append(function).append(".call(p);\n"
+							+ "};\n");
+		
+					String s = scriptBuilder.toString();
+					
+					scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+					try {
+						try {
+							scriptEngine.eval(s);
+							LOGGER.debug("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
+						} catch (Exception se) {
+							LOGGER.error("Script error: {}", s, se);
+						}
+					} finally {
+						scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+					}
+				}
+			});
 		}
 		@Override
 		public <T, U> void register(String function, AsyncScriptFunction<T, U> asyncFunction) {
-			asyncFunctions.put(function, cast(asyncFunction));
+			doExecute(new Runnable() {
+				@Override
+				public void run() {
+					StringBuilder scriptBuilder = new StringBuilder();
+		
+					String functionObjectVar = UNICITY_PREFIX + "function_" + function;
+					bindings.put(functionObjectVar, new AsyncInternal(cast(asyncFunction)));
+		
+					scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
+							+ "var ").append(function).append(" = function(p, callback) {\n"
+								+ UNICITY_PREFIX + "functionVar_").append(function).append(".call(" + UNICITY_PREFIX + "context, p, callback);\n"
+							+ "};\n");
+		
+					String s = scriptBuilder.toString();
+					
+					scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+					try {
+						try {
+							scriptEngine.eval(s);
+							LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
+						} catch (Exception se) {
+							LOGGER.error("Script error: {}", s, se);
+						}
+					} finally {
+						scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+					}
+				}
+			});
 		}
 		
 		@Override
@@ -327,44 +383,13 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 						scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
 						LOGGER.trace("> Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
 
-						StringBuilder scriptBuilder = new StringBuilder();
-
-						for (Map.Entry<String, SyncScriptFunction<Object, Object>> e : syncFunctions.entrySet()) {
-							String function = e.getKey();
-							SyncScriptFunction<Object, Object> syncFunction = e.getValue();
-							
-							String functionObjectVar = UNICITY_PREFIX + "function_" + function;
-							bindings.put(functionObjectVar, new SyncInternal(syncFunction));
-							
-							scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
-									+ "var ").append(function).append(" = function(p) {\n"
-										+ "return " + UNICITY_PREFIX + "functionVar_").append(function).append(".call(p);\n"
-									+ "};\n");
-						}
-
-						for (Map.Entry<String, AsyncScriptFunction<Object, Object>> e : asyncFunctions.entrySet()) {
-							String function = e.getKey();
-							AsyncScriptFunction<Object, Object> asyncFunction = e.getValue();
-							
-							String functionObjectVar = UNICITY_PREFIX + "function_" + function;
-							bindings.put(functionObjectVar, new AsyncInternal(asyncFunction));
-
-							scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
-									+ "var ").append(function).append(" = function(p, callback) {\n"
-										+ UNICITY_PREFIX + "functionVar_").append(function).append(".call(" + UNICITY_PREFIX + "context, p, callback);\n"
-									+ "};\n");
-						}
-						
-						scriptBuilder.append(script);
-						String s = scriptBuilder.toString();
-						
 						bindings.put(UNICITY_PREFIX + "context", endManager);
 						try {
 							try {
-								scriptEngine.eval(s);
+								scriptEngine.eval(script);
 								LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
 							} catch (Exception se) {
-								LOGGER.error("Script error: {}", s, se);
+								LOGGER.error("Script error: {}", script, se);
 								endManager.fail(se);
 							}
 						} finally {
