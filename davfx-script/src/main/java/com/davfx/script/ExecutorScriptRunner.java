@@ -25,35 +25,20 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 
 	private static final Config CONFIG = ConfigFactory.load(ExecutorScriptRunner.class.getClassLoader());
 	
-	private static final String DEFAULT_ENGINE_NAME = CONFIG.getString("ninio.script.engine");
-
 	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
 	
 	private ScriptEngine scriptEngine;
 	private final ThreadPoolExecutor executorService; // = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 
 	public ExecutorScriptRunner() {
-		this(DEFAULT_ENGINE_NAME);
-	}
-	public ExecutorScriptRunner(final String engineName) {
-		LOGGER.debug("Engine: {}", engineName);
-
 		executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
 
 		execute(new Runnable() {
 			@Override
 			public void run() {
-				if (engineName.equals("rhino")) {
-					scriptEngine = new com.sun.script.javascript.RhinoScriptEngineFactory().getScriptEngine();
-				} else if (engineName.equals("jav8")) {
-					scriptEngine = new lu.flier.script.V8ScriptEngineFactory().getScriptEngine();
-				} else if (engineName.equals("js")) {
-					scriptEngine = new ScriptEngineManager().getEngineByName(engineName);
-					if (scriptEngine == null) {
-						throw new IllegalArgumentException("Bad engine: " + engineName);
-					}
-				} else {
-					throw new IllegalArgumentException("Bad engine: " + engineName);
+				scriptEngine = new ScriptEngineManager().getEngineByName("js");
+				if (scriptEngine == null) {
+					throw new IllegalArgumentException("Bad engine: js");
 				}
 				
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
@@ -177,7 +162,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", context);
 								try {
 									try {
-										((Invocable) scriptEngine).invokeFunction("callbackObject", response);
+										((Invocable) scriptEngine).invokeFunction(UNICITY_PREFIX + "callbackObject", response);
 									} catch (Exception se) {
 										LOGGER.error("Script callback fail", se);
 										context.fail(se);

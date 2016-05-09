@@ -9,9 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.davfx.util.Lock;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 
 public class ScriptTest {
 
@@ -19,7 +16,7 @@ public class ScriptTest {
 	
 	@Test
 	public void testSimpleSync() throws Exception {
-		try (ScriptRunner runner = new ExecutorScriptRunner("js")) {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			final Lock<Object, Exception> lock = new Lock<>();
 			
 			runner.register("syncEcho1", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
@@ -62,11 +59,11 @@ public class ScriptTest {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			final Lock<Object, Exception> lock = new Lock<>();
 			
-			runner.register("syncEcho", new SyncScriptFunction() {
+			runner.register("syncEcho", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
-				public Object call(Object request) {
-					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("synchEcho " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
+				public Map<String, String> call(Map<String, String> request) {
+					Map<String, String> o = new HashMap<>();
+					o.put("message", "synchEcho " + request.get("message"));
 					return o;
 				}
 			});
@@ -82,17 +79,17 @@ public class ScriptTest {
 			});
 			
 			ScriptRunner.Engine engine = runner.engine();
-			engine.register("syncEcho2", new SyncScriptFunction() {
+			engine.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
-				public Object call(Object request) {
-					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("synchEcho2 " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
+				public Map<String, String> call(Map<String, String> request) {
+					Map<String, String> o = new HashMap<>();
+					o.put("message", "synchEcho2 " + request.get("message"));
 					return o;
 				}
 			});
-			engine.register("out", new SyncScriptFunction() {
+			engine.register("out", new SyncScriptFunction<Object, Void>() {
 				@Override
-				public Object call(Object request) {
+				public Void call(Object request) {
 					lock.set(request);
 					return null;
 				}
@@ -127,12 +124,12 @@ public class ScriptTest {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			final Lock<Object, Exception> lock = new Lock<>();
 			
-			runner.register("asyncEcho", new AsyncScriptFunction() {
+			runner.register("asyncEcho", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
-				public void call(Object request, Callback callback) {
-					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("asynchEcho " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
-					callback.handle(o);
+				public void call(Map<String, String> o, Callback<Map<String, String>> callback) {
+					Map<String, String> m = new HashMap<>();
+					m.put("message", "asynchEcho " + o.get("message"));
+					callback.handle(m);
 				}
 			});
 			runner.prepare("asyncEcho({'message':'aa'}, function(r) { });", new ScriptRunner.End() {
@@ -147,17 +144,17 @@ public class ScriptTest {
 			});
 			
 			ScriptRunner.Engine engine = runner.engine();
-			engine.register("asyncEcho2", new AsyncScriptFunction() {
+			engine.register("asyncEcho2", new AsyncScriptFunction<Map<String, String>, Map<String, String>>() {
 				@Override
-				public void call(Object request, Callback callback) {
-					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("asynchEcho2 " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
-					callback.handle(o);
+				public void call(Map<String, String> o, Callback<Map<String, String>> callback) {
+					Map<String, String> m = new HashMap<>();
+					m.put("message", "asynchEcho2 " + o.get("message"));
+					callback.handle(m);
 				}
 			});
-			engine.register("out", new SyncScriptFunction() {
+			engine.register("out", new SyncScriptFunction<Object, Void>() {
 				@Override
-				public Object call(Object request) {
+				public Void call(Object request) {
 					lock.set(request);
 					return null;
 				}
