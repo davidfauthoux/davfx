@@ -6,16 +6,20 @@ public interface ScriptRunner extends AutoCloseable {
 		void ended();
 	}
 	
+	/*%%
 	<T, U> void register(String function, SyncScriptFunction<T, U> syncFunction);
 	<T, U> void register(String function, AsyncScriptFunction<T, U> asyncFunction);
 
 	void prepare(String script, End end);
+	*/
 	
 	interface Engine {
 		<T, U> void register(String function, SyncScriptFunction<T, U> syncFunction);
 		<T, U> void register(String function, AsyncScriptFunction<T, U> asyncFunction);
 
 		void eval(String script, End end);
+
+		Engine sub();
 	}
 	Engine engine();
 	

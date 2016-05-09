@@ -55,6 +55,162 @@ public class ScriptTest {
 	}
 
 	@Test
+	public void testSimpleSyncWithDouble() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			final Lock<Double, Exception> lock = new Lock<>();
+			
+			runner.register("syncEcho", new SyncScriptFunction<Map<String, Double>, Double>() {
+				@Override
+				public Double call(Map<String, Double> request) {
+					double d = request.get("d");
+					lock.set(d);
+					return d;
+				}
+			});
+			
+			ScriptRunner.Engine engine = runner.engine();
+			engine.eval("var echoed = syncEcho({'d':1.23});", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+				}
+			});
+			
+			Assertions.assertThat(lock.waitFor()).isEqualTo(1.23d);
+		}
+	}
+
+	@Test
+	public void testBindingsPassingFromContextToSyncContext() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			{
+				final Lock<Double, Exception> lock = new Lock<>();
+				ScriptRunner.Engine engine = runner.engine();
+				engine.register("syncEcho", new SyncScriptFunction<Map<String, Double>, Double>() {
+					@Override
+					public Double call(Map<String, Double> request) {
+						double d = request.get("d");
+						lock.set(d);
+						return d;
+					}
+				});
+				
+				engine.eval("var glob = {'d':1.23};", new ScriptRunner.End() {
+					@Override
+					public void failed(Exception e) {
+						lock.fail(e);
+					}
+					@Override
+					public void ended() {
+						LOGGER.debug("End");
+					}
+				});
+				
+				engine.eval("var echoed = syncEcho(glob);", new ScriptRunner.End() {
+					@Override
+					public void failed(Exception e) {
+						lock.fail(e);
+					}
+					@Override
+					public void ended() {
+						LOGGER.debug("End");
+					}
+				});
+				
+				Assertions.assertThat(lock.waitFor()).isEqualTo(1.23d);
+			}
+			/*
+			{
+				final Lock<Double, Exception> lock = new Lock<>();
+				ScriptRunner.Engine engine = runner.engine();
+				engine.register("syncEcho", new SyncScriptFunction<Map<String, Double>, Double>() {
+					@Override
+					public Double call(Map<String, Double> request) {
+						double d = request.get("d");
+						lock.set(d);
+						return d;
+					}
+				});
+				
+				engine.eval("var _glob = {'d':1.23};", new ScriptRunner.End() {
+					@Override
+					public void failed(Exception e) {
+						lock.fail(e);
+					}
+					@Override
+					public void ended() {
+						LOGGER.debug("End");
+					}
+				});
+				
+				engine.eval("var echoed = syncEcho(glob);", new ScriptRunner.End() {
+					@Override
+					public void failed(Exception e) {
+						lock.fail(e);
+					}
+					@Override
+					public void ended() {
+						LOGGER.debug("End");
+					}
+				});
+				
+				Assertions.assertThat(lock.waitFor()).isEqualTo(1.23d);
+			}
+			*/
+		}
+	}
+
+	@Test
+	public void testBindingsPassingFromContextToAsyncContext() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			final Lock<Object, Exception> lock = new Lock<>();
+			
+			ScriptRunner.Engine engine = runner.engine();
+			engine.register("asyncEcho", new AsyncScriptFunction<Map<String, String>, String>() {
+				@Override
+				public void call(Map<String, String> request, AsyncScriptFunction.Callback<String> callback) {
+					callback.handle(request.get("param"));
+				}
+			});
+			
+			engine.register("out", new SyncScriptFunction<Object, Void>() {
+				@Override
+				public Void call(Object request) {
+					lock.set(request);
+					return null;
+				}
+			});
+			engine.eval("var glob = 'ggg';", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+				}
+			});
+			
+			engine.eval("var echoed = asyncEcho({'param':glob}, function(r) { out(glob); });", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+				}
+			});
+			
+			Assertions.assertThat(lock.waitFor()).isEqualTo("ggg");
+		}
+	}
+
+	@Test
 	public void testSync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			final Lock<Object, Exception> lock = new Lock<>();
