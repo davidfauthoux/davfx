@@ -1,7 +1,5 @@
 package com.davfx.script;
 
-import com.google.gson.JsonElement;
-
-public interface SyncScriptFunction {
-	JsonElement call(JsonElement request);
+public interface SyncScriptFunction<T, U> {
+	U call(T request);
 }

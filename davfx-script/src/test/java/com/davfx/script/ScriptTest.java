@@ -1,5 +1,8 @@
 package com.davfx.script;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -15,15 +18,55 @@ public class ScriptTest {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ScriptTest.class);
 	
 	@Test
+	public void testSimpleSync() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner("js")) {
+			final Lock<Object, Exception> lock = new Lock<>();
+			
+			runner.register("syncEcho1", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+				@Override
+				public Map<String, String> call(Map<String,String> request) {
+					LOGGER.debug("1 -------> {}", request);
+					Map<String, String> m = new HashMap<>();
+					m.put("out", "cc");
+					return m;
+				}
+			});
+			
+			runner.register("syncEcho2", new SyncScriptFunction<Map<String, String>, Map<String, String>>() {
+				@Override
+				public Map<String, String> call(Map<String,String> request) {
+					LOGGER.debug("2 -------> {}", request);
+					lock.set(request.get("out"));
+					return request;
+				}
+			});
+			
+			ScriptRunner.Engine engine = runner.engine();
+			engine.eval("var echoed = syncEcho2(syncEcho1({'message':'bb'}));", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+				}
+			});
+			
+			Assertions.assertThat(lock.waitFor().toString()).isEqualTo("cc");
+		}
+	}
+
+	@Test
 	public void testSync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock = new Lock<>();
+			final Lock<Object, Exception> lock = new Lock<>();
 			
 			runner.register("syncEcho", new SyncScriptFunction() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("synchEcho " + request.getAsJsonObject().get("message").getAsString()));
+					o.add("message", new JsonPrimitive("synchEcho " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
 					return o;
 				}
 			});
@@ -41,15 +84,15 @@ public class ScriptTest {
 			ScriptRunner.Engine engine = runner.engine();
 			engine.register("syncEcho2", new SyncScriptFunction() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("synchEcho2 " + request.getAsJsonObject().get("message").getAsString()));
+					o.add("message", new JsonPrimitive("synchEcho2 " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
 					return o;
 				}
 			});
 			engine.register("out", new SyncScriptFunction() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					lock.set(request);
 					return null;
 				}
@@ -82,13 +125,13 @@ public class ScriptTest {
 	@Test
 	public void testAsync() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock = new Lock<>();
+			final Lock<Object, Exception> lock = new Lock<>();
 			
 			runner.register("asyncEcho", new AsyncScriptFunction() {
 				@Override
-				public void call(JsonElement request, Callback callback) {
+				public void call(Object request, Callback callback) {
 					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("asynchEcho " + request.getAsJsonObject().get("message").getAsString()));
+					o.add("message", new JsonPrimitive("asynchEcho " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
 					callback.handle(o);
 				}
 			});
@@ -106,15 +149,15 @@ public class ScriptTest {
 			ScriptRunner.Engine engine = runner.engine();
 			engine.register("asyncEcho2", new AsyncScriptFunction() {
 				@Override
-				public void call(JsonElement request, Callback callback) {
+				public void call(Object request, Callback callback) {
 					JsonObject o = new JsonObject();
-					o.add("message", new JsonPrimitive("asynchEcho2 " + request.getAsJsonObject().get("message").getAsString()));
+					o.add("message", new JsonPrimitive("asynchEcho2 " + ((JsonElement) request).getAsJsonObject().get("message").getAsString()));
 					callback.handle(o);
 				}
 			});
 			engine.register("out", new SyncScriptFunction() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					lock.set(request);
 					return null;
 				}

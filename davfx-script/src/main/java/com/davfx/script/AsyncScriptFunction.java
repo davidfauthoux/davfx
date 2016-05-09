@@ -1,11 +1,9 @@
 package com.davfx.script;
 
-import com.google.gson.JsonElement;
-
-public interface AsyncScriptFunction {
-	interface Callback { // extends Closeable {
-		void handle(JsonElement response);
+public interface AsyncScriptFunction<T, U> {
+	interface Callback<U> { // extends Closeable {
+		void handle(U response);
 		void done();
 	}
-	void call(JsonElement request, Callback callback);
+	void call(T request, Callback<U> callback);
 }
