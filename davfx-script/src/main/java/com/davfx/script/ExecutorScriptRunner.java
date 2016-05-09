@@ -310,7 +310,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 		
 		@Override
-		public <T, U> void register(String function, SyncScriptFunction<T, U> syncFunction) {
+		public <T, U> void register(final String function, final SyncScriptFunction<T, U> syncFunction) {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
@@ -341,7 +341,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			});
 		}
 		@Override
-		public <T, U> void register(String function, AsyncScriptFunction<T, U> asyncFunction) {
+		public <T, U> void register(final String function, final AsyncScriptFunction<T, U> asyncFunction) {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
