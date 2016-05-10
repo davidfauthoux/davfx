@@ -1,34 +1,25 @@
 package com.davfx.script;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 import javax.script.Invocable;
-import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
-import javax.script.SimpleBindings;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.typesafe.config.Config;
-import com.typesafe.config.ConfigFactory;
-
 public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutorScriptRunner.class);
 
-	private static final Config CONFIG = ConfigFactory.load(ExecutorScriptRunner.class.getClassLoader());
-	
-	private static final String UNICITY_PREFIX = CONFIG.getString("ninio.script.unicity.prefix");
-	
 	private ScriptEngine scriptEngine;
 	private final ThreadPoolExecutor executorService; // = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
 	
-	//%% private final Map<String, Object> globalClosure = new HashMap<>();
-
 	public ExecutorScriptRunner() {
 		executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
 
@@ -42,15 +33,52 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
 
-				/*%%
 				try {
 					scriptEngine.eval(""
-							+ "var " + UNICITY_PREFIX + "context;\n"
-						);
+							
+									+ "function registerSync(name, syncObject) {"
+										+ "return function($, context, f) {"
+											+ "var g = function(request) {"
+												+ "return syncObject.call(request);"
+											+ "};"
+											+ "$[name] = g;"
+											+ "return f();"
+										+ "};"
+									+ "}"
+										
+									+ "function registerAsync(name, asyncObject) {"
+										+ "return function($, context, f) {"
+											+ "var g = function(request, callback) {"
+												+ "var capture = function(captureCallback, captureResponse) { captureCallback(captureResponse); };"
+												+ "asyncObject.call(capture, context, request, callback);"
+											+ "};"
+											+ "$[name] = g;"
+											+ "return f();"
+										+ "};"
+									+ "}"
+										
+									+ "function callCallback(capture, callback, response) {"
+										+ "capture(callback, response);"
+									+ "}"
+										
+									+ "function executeScript($, context, captures, index, script) {"
+										+ "if ($ == null) {"
+											+ "$ = {};"
+										+ "}"
+										+ "if (index == captures.size()) {"
+											+ "eval(script);"
+										+ "} else {"
+											+ "var f = captures.get(index);"
+											+ "return f($, context, function() {"
+												+ "executeScript($, context, captures, index + 1, script);"
+											+ "});"
+										+ "}"
+									+ "}"
+										
+									+ "");
 				} catch (Exception se) {
 					LOGGER.error("Could not initialize script engine", se);
 				}
-				*/
 			}
 		});
 	}
@@ -105,27 +133,6 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		return (AsyncScriptFunction<Object, Object>) f;
 	}
 	
-	/*%%%
-	private void executeScript(EndManager context, String script) {
-		Map<String, Object> closure = scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE);
-		closure.putAll(globalClosure);
-		closure.putAll(context.closure);
-		closure.put(UNICITY_PREFIX + "callbackObject", callbackObject);
-		closure.put(UNICITY_PREFIX + "context", context);
-		try {
-			try {
-				((Invocable) scriptEngine).invokeFunction(UNICITY_PREFIX + "callbackObject", response);
-			} catch (Exception se) {
-				LOGGER.error("Script callback fail", se);
-				context.fail(se);
-			}
-		} finally {
-			closure.clear();
-		}
-
-	}
-	*/
-
 	// Must be be public to be called from javascript
 	public final class SyncInternal {
 		private final SyncScriptFunction<Object, Object> syncFunction;
@@ -143,7 +150,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		private AsyncInternal(AsyncScriptFunction<Object, Object> asyncFunction) {
 			this.asyncFunction = asyncFunction;
 		}
-		public void call(final EndManager endManager, Object requestAsObject, final Object callbackObject) {
+		public void call(final Object capture, final EndManager endManager, Object requestAsObject, final Object callbackObject) {
 			endManager.inc();
 			
 			asyncFunction.call(requestAsObject, new AsyncScriptFunction.Callback<Object>() {
@@ -177,21 +184,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								return;
 							}
 
-							SimpleBindings bindings = new SimpleBindings();
-							scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
-							LOGGER.trace(">> Bindings = {}, evaluating {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet(), callbackObject);
-							bindings.put(UNICITY_PREFIX + "callbackObject", callbackObject);
-							bindings.put(UNICITY_PREFIX + "context", endManager);
 							try {
-								try {
-									((Invocable) scriptEngine).invokeFunction(UNICITY_PREFIX + "callbackObject", response);
-									LOGGER.trace("<< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
-								} catch (Exception se) {
-									LOGGER.error("Script callback fail ({})", callbackObject, se);
-									endManager.fail(se);
-								}
-							} finally {
-								scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+								((Invocable) scriptEngine).invokeFunction("callCallback", capture, callbackObject, response);
+							} catch (Exception se) {
+								LOGGER.error("Script callback fail ({})", callbackObject, se);
+								endManager.fail(se);
 							}
 						}
 					});
@@ -200,105 +197,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 	}
 	
-	/*%%
-	@Override
-	public <T, U> void register(final String function, final SyncScriptFunction<T, U> syncFunction) {
-		execute(new Runnable() {
-			@Override
-			public void run() {
-				Map<String, Object> closure = scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE);
-				closure.putAll(globalClosure);
-				closure.put(UNICITY_PREFIX + "function", new SyncInternal(cast(syncFunction)));
-				closure.put(UNICITY_PREFIX + "context", context);
-				try {
-
-				globalClosure.put(function, value)
-				scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "function", );
-				try {
-					try {
-						scriptEngine.eval("var " + function + ";\n"
-							+ "(function() {\n"
-								+ "var " + UNICITY_PREFIX + "varfunction = " + UNICITY_PREFIX + "function;\n"
-								+ function + " = function(p) {\n"
-									+ "return " + UNICITY_PREFIX + "varfunction.call(p);\n"
-								+ "};\n"
-							+ "})();\n"
-						);
-					} catch (Exception se) {
-						LOGGER.error("Could not register {}", function, se);
-					}
-				} finally {
-					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "function", null); // Memsafe null-set
-					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "function");
-				}
-			}
-		});
-	}
-	
-	@Override
-	public <T, U> void register(final String function, final AsyncScriptFunction<T, U> asyncFunction) {
-		execute(new Runnable() {
-			@Override
-			public void run() {
-				scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "function", new AsyncInternal(cast(asyncFunction)));
-				try {
-					try {
-						scriptEngine.eval("var " + function + ";\n"
-							+ "(function() {\n"
-								+ "var " + UNICITY_PREFIX + "varfunction = " + UNICITY_PREFIX + "function;\n"
-								+ function + " = function(p, callback) {\n"
-									+ UNICITY_PREFIX + "varfunction.call(" + UNICITY_PREFIX + "context, p, callback);\n"
-								+ "};\n"
-							+ "})();\n"
-						);
-					} catch (Exception se) {
-						LOGGER.error("Could not register {}", function, se);
-					}
-				} finally {
-					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "function", null); // Memsafe null-set
-					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).remove(UNICITY_PREFIX + "function");
-				}
-			}
-		});
-	}
-
-	@Override
-	public void prepare(final String script, final ScriptRunner.End end) {
-		execute(new Runnable() {
-			@Override
-			public void run() {
-				EndManager endManager = new EndManager(end);
-				endManager.inc();
-				try {
-					scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", endManager);
-					try {
-						try {
-							scriptEngine.eval(script);
-						} catch (Exception se) {
-							LOGGER.error("Script error: {}", script, se);
-							endManager.fail(se);
-						}
-					} finally {
-						scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).put(UNICITY_PREFIX + "context", null);
-					}
-				} finally {
-					endManager.dec();
-				}
-			}
-		});
-	}
-	*/
-	
 	private final class InnerEngine implements Engine {
-		private final SimpleBindings bindings = new SimpleBindings();
+		private final List<Object> captures = new ArrayList<>();
+		private final List<String> functionNames = new ArrayList<>();
 		
-		public InnerEngine(final SimpleBindings initialBindings) {
+		public InnerEngine(final List<Object> initialCaptures, final List<String> initialFunctionNames) {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					if (initialBindings != null) {
-						LOGGER.trace("Bindings >>> {}", initialBindings.keySet());
-						bindings.putAll(initialBindings);
+					if (initialCaptures != null) {
+						captures.addAll(initialCaptures);
+					}
+					if (initialFunctionNames != null) {
+						functionNames.addAll(initialFunctionNames);
 					}
 				}
 			});
@@ -306,7 +217,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		
 		@Override
 		public Engine sub() {
-			return new InnerEngine(bindings);
+			return new InnerEngine(captures, functionNames);
 		}
 		
 		@Override
@@ -314,28 +225,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					StringBuilder scriptBuilder = new StringBuilder();
-		
-					String functionObjectVar = UNICITY_PREFIX + "function_" + function;
-					bindings.put(functionObjectVar, new SyncInternal(cast(syncFunction)));
-					
-					scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
-							+ "var ").append(function).append(" = function(p) {\n"
-								+ "return " + UNICITY_PREFIX + "functionVar_").append(function).append(".call(p);\n"
-							+ "};\n");
-		
-					String s = scriptBuilder.toString();
-					
-					scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+					functionNames.add(function);
 					try {
-						try {
-							scriptEngine.eval(s);
-							LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
-						} catch (Exception se) {
-							LOGGER.error("Script error: {}", s, se);
-						}
-					} finally {
-						scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+						captures.add(((Invocable) scriptEngine).invokeFunction("registerSync", function, new SyncInternal(cast(syncFunction))));
+					} catch (Exception se) {
+						LOGGER.error("Script error", se);
 					}
 				}
 			});
@@ -345,28 +239,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					StringBuilder scriptBuilder = new StringBuilder();
-		
-					String functionObjectVar = UNICITY_PREFIX + "function_" + function;
-					bindings.put(functionObjectVar, new AsyncInternal(cast(asyncFunction)));
-		
-					scriptBuilder.append("var " + UNICITY_PREFIX + "functionVar_").append(function).append(" = ").append(functionObjectVar).append(";\n"
-							+ "var ").append(function).append(" = function(p, callback) {\n"
-								+ UNICITY_PREFIX + "functionVar_").append(function).append(".call(" + UNICITY_PREFIX + "context, p, callback);\n"
-							+ "};\n");
-		
-					String s = scriptBuilder.toString();
-					
-					scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
+					functionNames.add(function);
 					try {
-						try {
-							scriptEngine.eval(s);
-							LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
-						} catch (Exception se) {
-							LOGGER.error("Script error: {}", s, se);
-						}
-					} finally {
-						scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+						captures.add(((Invocable) scriptEngine).invokeFunction("registerAsync", function, new AsyncInternal(cast(asyncFunction))));
+					} catch (Exception se) {
+						LOGGER.error("Script error", se);
 					}
 				}
 			});
@@ -377,23 +254,24 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
+					StringBuilder b = new StringBuilder();
+					b.append("(function() {");
+					for (String function : functionNames) {
+						b.append("var ").append(function).append(" = $['" + function + "'];");
+					}
+					b.append(script);
+					b.append("})();");
+					
+					String composedScript = b.toString();
+					
 					EndManager endManager = new EndManager(end);
 					endManager.inc();
 					try {
-						scriptEngine.setBindings(bindings, ScriptContext.ENGINE_SCOPE);
-						LOGGER.trace("> Bindings = {}, evaluating {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet(), script);
-
-						bindings.put(UNICITY_PREFIX + "context", endManager);
 						try {
-							try {
-								scriptEngine.eval(script);
-								LOGGER.trace("< Bindings = {}", scriptEngine.getBindings(ScriptContext.ENGINE_SCOPE).keySet());
-							} catch (Exception se) {
-								LOGGER.error("Script error: {}", script, se);
-								endManager.fail(se);
-							}
-						} finally {
-							scriptEngine.setBindings(new SimpleBindings(), ScriptContext.ENGINE_SCOPE);
+							((Invocable) scriptEngine).invokeFunction("executeScript", null, endManager, captures, 0, composedScript);
+						} catch (Exception se) {
+							LOGGER.error("Script error", se);
+							endManager.fail(se);
 						}
 					} finally {
 						endManager.dec();
@@ -405,7 +283,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	@Override
 	public Engine engine() {
-		return new InnerEngine(null);
+		return new InnerEngine(null, null);
 	}
 
 	private void doExecute(Runnable r) {

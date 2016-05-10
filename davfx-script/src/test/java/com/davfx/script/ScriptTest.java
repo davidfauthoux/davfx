@@ -56,6 +56,41 @@ public class ScriptTest {
 	}
 
 	@Test
+	public void testSimpleAsync() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock = new Lock<>();
+			engine.register("syncEcho", new SyncScriptFunction<Object, Object>() {
+				@Override
+				public Object call(Object request) {
+					lock.set(request);
+					return request;
+				}
+			});
+			engine.register("asyncEcho", new AsyncScriptFunction<Object, Object>() {
+				@Override
+				public void call(Object request, AsyncScriptFunction.Callback<Object> callback) {
+					callback.handle(request);
+				}
+			});
+			
+			ScriptRunner.Engine subEngine = engine.sub();
+			subEngine.eval("asyncEcho('aaa', function(r) { syncEcho(r); });", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock.fail(e);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+				}
+			});
+			
+			Assertions.assertThat(lock.waitFor()).isEqualTo("aaa");
+		}
+	}
+
+	@Test
 	public void testSimpleSyncWithDouble() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
 			ScriptRunner.Engine engine = runner.engine();
@@ -101,7 +136,7 @@ public class ScriptTest {
 					}
 				});
 				
-				engine.eval("var glob = {'d':1.23};", new ScriptRunner.End() {
+				engine.eval("glob = {'d':1.23};", new ScriptRunner.End() { //TODO var ???
 					@Override
 					public void failed(Exception e) {
 						lock.fail(e);
@@ -125,7 +160,7 @@ public class ScriptTest {
 				
 				Assertions.assertThat(lock.waitFor()).isEqualTo(1.23d);
 			}
-			/*
+			/*TODO Should fail on this second time
 			{
 				final Lock<Double, Exception> lock = new Lock<>();
 				ScriptRunner.Engine engine = runner.engine();
@@ -135,17 +170,6 @@ public class ScriptTest {
 						double d = request.get("d");
 						lock.set(d);
 						return d;
-					}
-				});
-				
-				engine.eval("var _glob = {'d':1.23};", new ScriptRunner.End() {
-					@Override
-					public void failed(Exception e) {
-						lock.fail(e);
-					}
-					@Override
-					public void ended() {
-						LOGGER.debug("End");
 					}
 				});
 				
@@ -186,7 +210,7 @@ public class ScriptTest {
 					return null;
 				}
 			});
-			engine.eval("var glob = 'ggg';", new ScriptRunner.End() {
+			engine.eval("glob = 'ggg';", new ScriptRunner.End() { //TODO var ???
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -197,7 +221,7 @@ public class ScriptTest {
 				}
 			});
 			
-			engine.eval("var echoed = asyncEcho({'param':glob}, function(r) { out(glob); });", new ScriptRunner.End() {
+			engine.eval("var echoed = asyncEcho({'param':glob}, function(r) { asyncEcho({'param':glob}, function(r) { out(glob); }); });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);

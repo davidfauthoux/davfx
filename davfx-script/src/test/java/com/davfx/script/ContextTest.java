@@ -4,40 +4,42 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import org.assertj.core.api.Assertions;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.davfx.util.Lock;
-import com.google.gson.JsonElement;
 
 public class ContextTest {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(ContextTest.class);
 	
+	@Ignore
 	@Test
 	public void test() throws Exception {
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock = new Lock<>();
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock = new Lock<>();
 			final Lock<Boolean, Exception> endLock = new Lock<>();
 			
-			runner.register("trace", new SyncScriptFunction() {
+			engine.register("trace", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("TRACE {}", request);
 					lock.set(request);
 					return null;
 				}
 			});
-			runner.register("echo", new AsyncScriptFunction() {
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(JsonElement request, Callback callback) {
+				public void call(Object request, AsyncScriptFunction.Callback<Object> callback) {
 					LOGGER.debug("ECHO {}", request);
 					callback.handle(request);
 					callback.done();
 				}
 			});
-			runner.prepare("var f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
+			engine.eval("fffff = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -48,8 +50,8 @@ public class ContextTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.eval("f('aaa', function(r) { trace(r); });", new ScriptRunner.End() {
+			engine = engine.sub();
+			engine.eval("fffff('aaa', function(r) { trace(r); });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -63,28 +65,31 @@ public class ContextTest {
 			});
 			
 			Assertions.assertThat(endLock.waitFor()).isTrue();
-			Assertions.assertThat(lock.waitFor().getAsString()).isEqualTo("aaa");
+			Assertions.assertThat(lock.waitFor()).isEqualTo("aaa");
+			LOGGER.debug("---");
 		}
 	}
 
+	@Ignore
 	@Test
 	public void test2() throws Exception {
 		final Executor e = Executors.newSingleThreadExecutor();
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock = new Lock<>();
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock = new Lock<>();
 			final Lock<Boolean, Exception> endLock = new Lock<>();
 			
-			runner.register("trace", new SyncScriptFunction() {
+			engine.register("trace", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("TRACE {}", request);
 					lock.set(request);
 					return null;
 				}
 			});
-			runner.register("echo", new AsyncScriptFunction() {
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(Object request, AsyncScriptFunction.Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -99,7 +104,7 @@ public class ContextTest {
 					});
 				}
 			});
-			runner.prepare("var f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
+			engine.eval("var f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -110,10 +115,10 @@ public class ContextTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.register("echo2", new AsyncScriptFunction() {
+			engine = engine.sub();
+			engine.register("echo2", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(final Object request, final AsyncScriptFunction.Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -128,9 +133,9 @@ public class ContextTest {
 					});
 				}
 			});
-			engine.register("echo3", new SyncScriptFunction() {
+			engine.register("echo3", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("ECHO3 {}", request);
 					return request;
 				}
@@ -149,7 +154,7 @@ public class ContextTest {
 			});
 			
 			Assertions.assertThat(endLock.waitFor()).isTrue();
-			Assertions.assertThat(lock.waitFor().getAsString()).isEqualTo("aaa");
+			Assertions.assertThat(lock.waitFor()).isEqualTo("aaa");
 		}
 	}
 	
@@ -157,20 +162,21 @@ public class ContextTest {
 	public void test3() throws Exception {
 		final Executor e = Executors.newSingleThreadExecutor();
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock = new Lock<>();
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock = new Lock<>();
 			final Lock<Boolean, Exception> endLock = new Lock<>();
 			
-			runner.register("trace", new SyncScriptFunction() {
+			engine.register("trace", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("TRACE {}", request);
 					lock.set(request);
 					return null;
 				}
 			});
-			runner.register("echo", new AsyncScriptFunction() {
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(final Object request, final Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -185,7 +191,7 @@ public class ContextTest {
 					});
 				}
 			});
-			runner.prepare("var echo3$; var f = function(a, c) { echo(echo3$(a), c); };", new ScriptRunner.End() {
+			engine.eval("var echo3$; var f = function(a, c) { echo(echo3$(a), c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -196,10 +202,10 @@ public class ContextTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine = runner.engine();
-			engine.register("echo2", new AsyncScriptFunction() {
+			engine = engine.sub();
+			engine.register("echo2", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(final Object request, final Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -214,9 +220,9 @@ public class ContextTest {
 					});
 				}
 			});
-			engine.register("echo3", new SyncScriptFunction() {
+			engine.register("echo3", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("ECHO3 {}", request);
 					return request;
 				}
@@ -235,20 +241,21 @@ public class ContextTest {
 			});
 			
 			Assertions.assertThat(endLock.waitFor()).isTrue();
-			Assertions.assertThat(lock.waitFor().getAsString()).isEqualTo("aaa");
+			Assertions.assertThat(lock.waitFor()).isEqualTo("aaa");
 		}
 	}
 	
 	@Test
-	public void test4() throws Exception {
+	public void test40() throws Exception {
 		final Executor e = Executors.newSingleThreadExecutor();
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock0 = new Lock<>();
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock0 = new Lock<>();
 			final Lock<Boolean, Exception> endLock0 = new Lock<>();
-			final Lock<JsonElement, Exception> lock1 = new Lock<>();
+			final Lock<Object, Exception> lock1 = new Lock<>();
 			final Lock<Boolean, Exception> endLock1 = new Lock<>();
 			
-			runner.prepare("var context;", new ScriptRunner.End() {
+			engine.eval("var context;", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -258,9 +265,9 @@ public class ContextTest {
 				public void ended() {
 				}
 			});
-			runner.register("echo", new AsyncScriptFunction() {
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(final Object request, final Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -275,7 +282,7 @@ public class ContextTest {
 					});
 				}
 			});
-			runner.prepare("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
+			engine.eval("var f = function(c) { echo(context, c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -286,10 +293,147 @@ public class ContextTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine0 = runner.engine();
-			engine0.register("out", new SyncScriptFunction() {
+			ScriptRunner.Engine engine0 = engine.sub();
+			engine0.register("out", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
+					LOGGER.debug("Out0 {}", request);
+					lock0.set(request);
+					return request;
+				}
+			});
+
+			ScriptRunner.Engine engine1 = engine.sub();
+			engine1.register("out", new SyncScriptFunction<Object, Object>() {
+				@Override
+				public Object call(Object request) {
+					LOGGER.debug("Out1 {}", request);
+					lock1.set(request);
+					return request;
+				}
+			});
+
+			engine0.eval("context = '000'; var toto='titi'; f(function(r) { out(r); });", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					endLock0.set(true);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("000 end");
+					endLock0.set(true);
+				}
+			});
+			
+			Assertions.assertThat(endLock0.waitFor()).isTrue();
+			Assertions.assertThat(endLock1.waitFor()).isTrue();
+			Assertions.assertThat(lock0.waitFor()).isEqualTo("000");
+			Assertions.assertThat(lock1.waitFor()).isEqualTo("111");
+		}
+	}
+	
+	@Test
+	public void test41() throws Exception {
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock0 = new Lock<>();
+			final Lock<Boolean, Exception> endLock0 = new Lock<>();
+			final Lock<Object, Exception> lock1 = new Lock<>();
+			final Lock<Boolean, Exception> endLock1 = new Lock<>();
+			
+			ScriptRunner.Engine engine0 = engine.sub();
+			engine0.register("out", new SyncScriptFunction<Object, Object>() {
+				@Override
+				public Object call(Object request) {
+					LOGGER.debug("Out0 {}", request);
+					lock0.set(request);
+					return request;
+				}
+			});
+
+			ScriptRunner.Engine engine1 = engine.sub();
+			engine1.register("out", new SyncScriptFunction<Object, Object>() {
+				@Override
+				public Object call(Object request) {
+					LOGGER.debug("Out1 {}", request);
+					lock1.set(request);
+					return request;
+				}
+			});
+			
+			engine0.eval("out('aaa');", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					endLock0.set(true);
+				}
+				@Override
+				public void ended() {
+					LOGGER.debug("End");
+					endLock0.set(true);
+				}
+			});
+			
+			Assertions.assertThat(endLock0.waitFor()).isTrue();
+			Assertions.assertThat(endLock1.waitFor()).isTrue();
+			Assertions.assertThat(lock0.waitFor()).isEqualTo("000");
+			Assertions.assertThat(lock1.waitFor()).isEqualTo("111");
+		}
+	}
+
+	@Test
+	public void test4() throws Exception {
+		final Executor e = Executors.newSingleThreadExecutor();
+		try (ScriptRunner runner = new ExecutorScriptRunner()) {
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock0 = new Lock<>();
+			final Lock<Boolean, Exception> endLock0 = new Lock<>();
+			final Lock<Object, Exception> lock1 = new Lock<>();
+			final Lock<Boolean, Exception> endLock1 = new Lock<>();
+			
+			engine.eval("var context;", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					lock1.fail(e);
+				}
+				@Override
+				public void ended() {
+				}
+			});
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
+				@Override
+				public void call(final Object request, final Callback<Object> callback) {
+					e.execute(new Runnable() {
+						@Override
+						public void run() {
+							try {
+								Thread.sleep(100);
+							} catch (InterruptedException ie) {
+							}
+							LOGGER.debug("ECHO {}", request);
+							callback.handle(request);
+							callback.done();
+						}
+					});
+				}
+			});
+			engine.eval("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
+				@Override
+				public void failed(Exception e) {
+					lock0.fail(e);
+					lock1.fail(e);
+				}
+				@Override
+				public void ended() {
+				}
+			});
+			
+			ScriptRunner.Engine engine0 = engine.sub();
+			engine0.register("out", new SyncScriptFunction<Object, Object>() {
+				@Override
+				public Object call(Object request) {
 					LOGGER.debug("Out0 {}", request);
 					lock0.set(request);
 					return request;
@@ -308,10 +452,10 @@ public class ContextTest {
 				}
 			});
 
-			ScriptRunner.Engine engine1 = runner.engine();
-			engine1.register("out", new SyncScriptFunction() {
+			ScriptRunner.Engine engine1 = engine.sub();
+			engine1.register("out", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("Out1 {}", request);
 					lock1.set(request);
 					return request;
@@ -332,8 +476,8 @@ public class ContextTest {
 			
 			Assertions.assertThat(endLock0.waitFor()).isTrue();
 			Assertions.assertThat(endLock1.waitFor()).isTrue();
-			Assertions.assertThat(lock0.waitFor().getAsString()).isEqualTo("aaa0");
-			Assertions.assertThat(lock1.waitFor().getAsString()).isEqualTo("aaa1");
+			Assertions.assertThat(lock0.waitFor()).isEqualTo("aaa0");
+			Assertions.assertThat(lock1.waitFor()).isEqualTo("aaa1");
 		}
 	}
 	
@@ -341,12 +485,13 @@ public class ContextTest {
 	public void test5() throws Exception {
 		final Executor e = Executors.newSingleThreadExecutor();
 		try (ScriptRunner runner = new ExecutorScriptRunner()) {
-			final Lock<JsonElement, Exception> lock0 = new Lock<>();
+			ScriptRunner.Engine engine = runner.engine();
+			final Lock<Object, Exception> lock0 = new Lock<>();
 			final Lock<Boolean, Exception> endLock0 = new Lock<>();
-			final Lock<JsonElement, Exception> lock1 = new Lock<>();
+			final Lock<Object, Exception> lock1 = new Lock<>();
 			final Lock<Boolean, Exception> endLock1 = new Lock<>();
 			
-			runner.prepare("var context;", new ScriptRunner.End() {
+			engine.eval("var context;", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -356,9 +501,9 @@ public class ContextTest {
 				public void ended() {
 				}
 			});
-			runner.register("echo", new AsyncScriptFunction() {
+			engine.register("echo", new AsyncScriptFunction<Object, Object>() {
 				@Override
-				public void call(final JsonElement request, final Callback callback) {
+				public void call(final Object request, final Callback<Object> callback) {
 					e.execute(new Runnable() {
 						@Override
 						public void run() {
@@ -373,7 +518,7 @@ public class ContextTest {
 					});
 				}
 			});
-			runner.prepare("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
+			engine.eval("var f = function(a, c) { var _context = context; echo(a, function(aa) { _context.out(aa); c(); }); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock0.fail(e);
@@ -384,10 +529,10 @@ public class ContextTest {
 				}
 			});
 			
-			ScriptRunner.Engine engine0 = runner.engine();
-			engine0.register("out", new SyncScriptFunction() {
+			ScriptRunner.Engine engine0 = engine.sub();
+			engine0.register("out", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("Out0 {}", request);
 					lock0.set(request);
 					return request;
@@ -406,10 +551,10 @@ public class ContextTest {
 				}
 			});
 
-			ScriptRunner.Engine engine1 = runner.engine();
-			engine1.register("out", new SyncScriptFunction() {
+			ScriptRunner.Engine engine1 = engine.sub();
+			engine1.register("out", new SyncScriptFunction<Object, Object>() {
 				@Override
-				public JsonElement call(JsonElement request) {
+				public Object call(Object request) {
 					LOGGER.debug("Out1 {}", request);
 					lock1.set(request);
 					return request;
@@ -430,8 +575,8 @@ public class ContextTest {
 			
 			Assertions.assertThat(endLock0.waitFor()).isTrue();
 			Assertions.assertThat(endLock1.waitFor()).isTrue();
-			Assertions.assertThat(lock0.waitFor().getAsString()).isEqualTo("aaa0");
-			Assertions.assertThat(lock1.waitFor().getAsString()).isEqualTo("aaa1");
+			Assertions.assertThat(lock0.waitFor()).isEqualTo("aaa0");
+			Assertions.assertThat(lock1.waitFor()).isEqualTo("aaa1");
 		}
 	}
 }
