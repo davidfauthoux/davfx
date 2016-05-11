@@ -1,6 +1,6 @@
 package com.davfx.script;
 
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -36,43 +36,45 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				try {
 					scriptEngine.eval(""
 							
-									+ "function registerSync(name, syncObject) {"
-										+ "return function($, context, f) {"
-											+ "var g = function(request) {"
-												+ "return syncObject.call(request);"
-											+ "};"
-											+ "$[name] = g;"
-											+ "return f();"
-										+ "};"
-									+ "}"
-										
-									+ "function registerAsync(name, asyncObject) {"
-										+ "return function($, context, f) {"
-											+ "var g = function(request, callback) {"
-												+ "var capture = function(captureCallback, captureResponse) { captureCallback(captureResponse); };"
-												+ "asyncObject.call(capture, context, request, callback);"
-											+ "};"
-											+ "$[name] = g;"
-											+ "return f();"
-										+ "};"
-									+ "}"
-										
-									+ "function callCallback(capture, callback, response) {"
-										+ "capture(callback, response);"
-									+ "}"
-										
-									+ "function executeScript($, context, captures, index, script) {"
-										+ "if ($ == null) {"
+									+ "function registerSync($, name, syncObject) {"
+										+ "if (!$) {"
 											+ "$ = {};"
 										+ "}"
-										+ "if (index == captures.size()) {"
-											+ "eval(script);"
-										+ "} else {"
-											+ "var f = captures.get(index);"
-											+ "return f($, context, function() {"
-												+ "executeScript($, context, captures, index + 1, script);"
-											+ "});"
+										+ "$[name + '_'] = function(endManager) {"
+											+ "return function(request) {"
+												+ "return syncObject.call(request);"
+											+ "};"
+										+ "};"
+										+ "return $;"
+									+ "}"
+										
+									+ "function registerAsync($, name, asyncObject) {"
+										+ "if (!$) {"
+											+ "$ = {};"
 										+ "}"
+										+ "$[name + '_'] = function(endManager) {"
+											+ "return function(request, callback) {"
+												+ "asyncObject.call(endManager, request, callback);"
+											+ "};"
+										+ "};"
+										+ "return $;"
+									+ "}"
+										
+									+ "function callCallback(callback, response) {"
+										+ "if (callback) {"
+											+ "callback(response);"
+										+ "}"
+									+ "}"
+
+									+ "function copyContext($) {"
+										+ "if (!$) {"
+											+ "return null;"
+										+ "}"
+										+ "var c = {};"
+										+ "for (var k in $) {"
+											+ "c[k] = $[k];"
+										+ "}"
+										+ "return c;"
 									+ "}"
 										
 									+ "");
@@ -150,7 +152,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		private AsyncInternal(AsyncScriptFunction<Object, Object> asyncFunction) {
 			this.asyncFunction = asyncFunction;
 		}
-		public void call(final Object capture, final EndManager endManager, Object requestAsObject, final Object callbackObject) {
+		public void call(final EndManager endManager, Object requestAsObject, final Object callbackObject) {
 			endManager.inc();
 			
 			asyncFunction.call(requestAsObject, new AsyncScriptFunction.Callback<Object>() {
@@ -185,7 +187,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							}
 
 							try {
-								((Invocable) scriptEngine).invokeFunction("callCallback", capture, callbackObject, response);
+								((Invocable) scriptEngine).invokeFunction("callCallback", new Object[] { callbackObject, response });
 							} catch (Exception se) {
 								LOGGER.error("Script callback fail ({})", callbackObject, se);
 								endManager.fail(se);
@@ -198,26 +200,28 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	}
 	
 	private final class InnerEngine implements Engine {
-		private final List<Object> captures = new ArrayList<>();
-		private final List<String> functionNames = new ArrayList<>();
+		private Object context = null;
+		private final List<String> functions = new LinkedList<>();
 		
-		public InnerEngine(final List<Object> initialCaptures, final List<String> initialFunctionNames) {
-			doExecute(new Runnable() {
-				@Override
-				public void run() {
-					if (initialCaptures != null) {
-						captures.addAll(initialCaptures);
+		public InnerEngine(final InnerEngine parent) {
+			if (parent != null) {
+				doExecute(new Runnable() {
+					@Override
+					public void run() {
+						functions.addAll(parent.functions);
+						try {
+							InnerEngine.this.context = ((Invocable) scriptEngine).invokeFunction("copyContext", new Object[] { parent.context });
+						} catch (Exception se) {
+							LOGGER.error("Script error", se);
+						}
 					}
-					if (initialFunctionNames != null) {
-						functionNames.addAll(initialFunctionNames);
-					}
-				}
-			});
+				});
+			}
 		}
 		
 		@Override
 		public Engine sub() {
-			return new InnerEngine(captures, functionNames);
+			return new InnerEngine(this);
 		}
 		
 		@Override
@@ -225,9 +229,9 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					functionNames.add(function);
+					functions.add(function);
 					try {
-						captures.add(((Invocable) scriptEngine).invokeFunction("registerSync", function, new SyncInternal(cast(syncFunction))));
+						context = ((Invocable) scriptEngine).invokeFunction("registerSync", new Object[] { context, function, new SyncInternal(cast(syncFunction)) });
 					} catch (Exception se) {
 						LOGGER.error("Script error", se);
 					}
@@ -239,9 +243,9 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					functionNames.add(function);
+					functions.add(function);
 					try {
-						captures.add(((Invocable) scriptEngine).invokeFunction("registerAsync", function, new AsyncInternal(cast(asyncFunction))));
+						context = ((Invocable) scriptEngine).invokeFunction("registerAsync", new Object[] { context, function, new AsyncInternal(cast(asyncFunction))});
 					} catch (Exception se) {
 						LOGGER.error("Script error", se);
 					}
@@ -255,12 +259,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				@Override
 				public void run() {
 					StringBuilder b = new StringBuilder();
-					b.append("(function() {");
-					for (String function : functionNames) {
-						b.append("var ").append(function).append(" = $['" + function + "'];");
+					b.append("(function($, endManager) {\n"
+							+ "if (!$) {\n"
+								+ "$ = {};\n"
+							+ "}\n");
+					for (String f : functions) {
+						b.append("var " + f + " = $." + f + "_(endManager);\n");
 					}
+					b.append("\n");
 					b.append(script);
-					b.append("})();");
+					b.append(";\n");
+					b.append("\n");
+					b.append("return $;\n"
+							+ "})($, endManager);");
 					
 					String composedScript = b.toString();
 					
@@ -268,9 +279,16 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					endManager.inc();
 					try {
 						try {
-							((Invocable) scriptEngine).invokeFunction("executeScript", null, endManager, captures, 0, composedScript);
+							try {
+								scriptEngine.put("$", context);
+								scriptEngine.put("endManager", endManager);
+								context = scriptEngine.eval(composedScript);
+							} finally {
+								scriptEngine.put("endManager", null);
+								scriptEngine.put("$", null);
+							}
 						} catch (Exception se) {
-							LOGGER.error("Script error", se);
+							LOGGER.error("Script error: {}", composedScript, se);
 							endManager.fail(se);
 						}
 					} finally {
@@ -283,7 +301,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	
 	@Override
 	public Engine engine() {
-		return new InnerEngine(null, null);
+		return new InnerEngine(null);
 	}
 
 	private void doExecute(Runnable r) {
