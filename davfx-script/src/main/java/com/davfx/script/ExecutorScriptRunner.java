@@ -1,13 +1,12 @@
 package com.davfx.script;
 
-import java.util.LinkedList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
-import javax.script.Invocable;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineManager;
 
@@ -32,55 +31,6 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 				}
 				
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
-
-				try {
-					scriptEngine.eval(""
-							
-									+ "function registerSync($, name, syncObject) {"
-										+ "if (!$) {"
-											+ "$ = {};"
-										+ "}"
-										+ "$[name + '_'] = function(endManager) {"
-											+ "return function(request) {"
-												+ "return syncObject.call(request);"
-											+ "};"
-										+ "};"
-										+ "return $;"
-									+ "}"
-										
-									+ "function registerAsync($, name, asyncObject) {"
-										+ "if (!$) {"
-											+ "$ = {};"
-										+ "}"
-										+ "$[name + '_'] = function(endManager) {"
-											+ "return function(request, callback) {"
-												+ "asyncObject.call(endManager, request, callback);"
-											+ "};"
-										+ "};"
-										+ "return $;"
-									+ "}"
-										
-									+ "function callCallback(callback, response) {"
-										+ "if (callback) {"
-											+ "callback(response);"
-										+ "}"
-									+ "}"
-
-									+ "function copyContext($) {"
-										+ "if (!$) {"
-											+ "return null;"
-										+ "}"
-										+ "var c = {};"
-										+ "for (var k in $) {"
-											+ "c[k] = $[k];"
-										+ "}"
-										+ "return c;"
-									+ "}"
-										
-									+ "");
-				} catch (Exception se) {
-					LOGGER.error("Could not initialize script engine", se);
-				}
 			}
 		});
 	}
@@ -133,6 +83,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	@SuppressWarnings("unchecked")
 	private static <T, U> AsyncScriptFunction<Object, Object> cast(AsyncScriptFunction<T, U> f) {
 		return (AsyncScriptFunction<Object, Object>) f;
+	}
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> cast(Object f) {
+		return (Map<String, Object>) f;
 	}
 	
 	// Must be be public to be called from javascript
@@ -187,9 +141,21 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							}
 
 							try {
-								((Invocable) scriptEngine).invokeFunction("callCallback", new Object[] { callbackObject, response });
+								try {
+									scriptEngine.put("callback", callbackObject);
+									scriptEngine.put("r", response);
+									scriptEngine.eval(""
+										+ "(function(callback, r) {\n"
+											+ "if (callback) {\n"
+												+ "callback(r);\n"
+											+ "}\n"
+										+ "})(callback, r)");
+								} finally {
+									scriptEngine.put("callback", null);
+									scriptEngine.put("r", null);
+								}
 							} catch (Exception se) {
-								LOGGER.error("Script callback fail ({})", callbackObject, se);
+								LOGGER.error("Callback script error", se);
 								endManager.fail(se);
 							}
 						}
@@ -200,19 +166,19 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	}
 	
 	private final class InnerEngine implements Engine {
-		private Object context = null;
-		private final List<String> functions = new LinkedList<>();
+		private Map<String, Object> context = null;
+		private final Map<String, SyncInternal> syncFunctions = new HashMap<>();
+		private final Map<String, AsyncInternal> asyncFunctions = new HashMap<>();
 		
 		public InnerEngine(final InnerEngine parent) {
 			if (parent != null) {
 				doExecute(new Runnable() {
 					@Override
 					public void run() {
-						functions.addAll(parent.functions);
-						try {
-							InnerEngine.this.context = ((Invocable) scriptEngine).invokeFunction("copyContext", new Object[] { parent.context });
-						} catch (Exception se) {
-							LOGGER.error("Script error", se);
+						syncFunctions.putAll(parent.syncFunctions);
+						asyncFunctions.putAll(parent.asyncFunctions);
+						if (parent.context != null) {
+							context = new HashMap<>(parent.context);
 						}
 					}
 				});
@@ -229,12 +195,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					functions.add(function);
-					try {
-						context = ((Invocable) scriptEngine).invokeFunction("registerSync", new Object[] { context, function, new SyncInternal(cast(syncFunction)) });
-					} catch (Exception se) {
-						LOGGER.error("Script error", se);
-					}
+					syncFunctions.put(function, new SyncInternal(cast(syncFunction)));
 				}
 			});
 		}
@@ -243,12 +204,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					functions.add(function);
-					try {
-						context = ((Invocable) scriptEngine).invokeFunction("registerAsync", new Object[] { context, function, new AsyncInternal(cast(asyncFunction))});
-					} catch (Exception se) {
-						LOGGER.error("Script error", se);
-					}
+					asyncFunctions.put(function, new AsyncInternal(cast(asyncFunction)));
 				}
 			});
 		}
@@ -258,20 +214,47 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
-					StringBuilder b = new StringBuilder();
-					b.append("(function($, endManager) {\n"
-							+ "if (!$) {\n"
-								+ "$ = {};\n"
-							+ "}\n");
-					for (String f : functions) {
-						b.append("var " + f + " = $." + f + "_(endManager);\n");
+					StringBuilder prefixBuilder = new StringBuilder();
+					int max = 0;
+					for (String f : syncFunctions.keySet()) {
+						max = Math.max(max, f.length());
 					}
-					b.append("\n");
+					for (int i = 0; i < max; i++) {
+						prefixBuilder.append('_');
+					}
+					String prefix = prefixBuilder.toString();
+					
+					StringBuilder b = new StringBuilder();
+					b.append("(function($");
+					for (String f : syncFunctions.keySet()) {
+						b.append(", ").append(f);
+					}
+					for (String f : asyncFunctions.keySet()) {
+						b.append(", ").append(f);
+					}
+					b.append(") {\n");
 					b.append(script);
 					b.append(";\n");
-					b.append("\n");
 					b.append("return $;\n"
-							+ "})($, endManager);");
+							+ "})(").append(prefix).append("$ || {}");
+					for (String f : syncFunctions.keySet()) {
+						b.append(", (function() {\n"
+								+ "var ").append(prefix).append(prefix).append("f = ").append(prefix).append(f).append(";"
+								+ "return function(request) {\n"
+									+ "return ").append(prefix).append(prefix).append("f.call(request);\n"
+								+ "}"
+							+ "})()\n");
+					}
+					for (String f : asyncFunctions.keySet()) {
+						b.append(", (function() {\n"
+								+ "var ").append(prefix).append(prefix).append("f = ").append(prefix).append(f).append(";\n"
+								+ "var ").append(prefix).append(prefix).append("e = ").append(prefix).append("endManager;\n"
+								+ "return function(request, callback) {\n"
+									+ "").append(prefix).append(prefix).append("f.call(").append(prefix).append(prefix).append("e, request, callback);\n"
+								+ "}"
+							+ "})()\n");
+					}
+					b.append(");");
 					
 					String composedScript = b.toString();
 					
@@ -280,12 +263,24 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					try {
 						try {
 							try {
-								scriptEngine.put("$", context);
-								scriptEngine.put("endManager", endManager);
-								context = scriptEngine.eval(composedScript);
+								scriptEngine.put(prefix + "$", context);
+								scriptEngine.put(prefix + "endManager", endManager);
+								for (Map.Entry<String, SyncInternal> e : syncFunctions.entrySet()) {
+									scriptEngine.put(prefix + e.getKey(), e.getValue());
+								}
+								for (Map.Entry<String, AsyncInternal> e : asyncFunctions.entrySet()) {
+									scriptEngine.put(prefix + e.getKey(), e.getValue());
+								}
+								context = cast(scriptEngine.eval(composedScript));
 							} finally {
-								scriptEngine.put("endManager", null);
-								scriptEngine.put("$", null);
+								scriptEngine.put(prefix + "endManager", null);
+								scriptEngine.put(prefix + "$", null);
+								for (String f : syncFunctions.keySet()) {
+									scriptEngine.put(prefix + f, null);
+								}
+								for (String f : asyncFunctions.keySet()) {
+									scriptEngine.put(prefix + f, null);
+								}
 							}
 						} catch (Exception se) {
 							LOGGER.error("Script error: {}", composedScript, se);
