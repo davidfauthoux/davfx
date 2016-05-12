@@ -39,7 +39,7 @@ public class ContextTest {
 					callback.done();
 				}
 			});
-			engine.eval("fffff = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
+			engine.eval("$.fffff = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -50,8 +50,7 @@ public class ContextTest {
 				}
 			});
 			
-			engine = engine.sub();
-			engine.eval("fffff('aaa', function(r) { trace(r); });", new ScriptRunner.End() {
+			engine.eval("$.fffff('aaa', function(r) { trace(r); });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -104,7 +103,7 @@ public class ContextTest {
 					});
 				}
 			});
-			engine.eval("var f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
+			engine.eval("$.f = function(a, c) { echo(a, c); };", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -115,7 +114,6 @@ public class ContextTest {
 				}
 			});
 			
-			engine = engine.sub();
 			engine.register("echo2", new AsyncScriptFunction<Object, Object>() {
 				@Override
 				public void call(final Object request, final AsyncScriptFunction.Callback<Object> callback) {
@@ -140,7 +138,7 @@ public class ContextTest {
 					return request;
 				}
 			});
-			engine.eval("f('aaa', function(r) { echo3(r); echo2(r, function(rr) { trace(echo3(rr)); }); });", new ScriptRunner.End() {
+			engine.eval("$.f('aaa', function(r) { echo3(r); echo2(r, function(rr) { trace(echo3(rr)); }); });", new ScriptRunner.End() {
 				@Override
 				public void failed(Exception e) {
 					lock.fail(e);
@@ -202,7 +200,6 @@ public class ContextTest {
 				}
 			});
 			
-			engine = engine.sub();
 			engine.register("echo2", new AsyncScriptFunction<Object, Object>() {
 				@Override
 				public void call(final Object request, final Callback<Object> callback) {
