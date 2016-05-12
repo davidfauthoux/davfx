@@ -6,13 +6,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.davfx.util.Lock;
-import com.google.gson.JsonElement;
 
 public class PerfTest {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(PerfTest.class);
 	
-	private static void evalSync(String name) throws Exception {
+	private static void evalSync(String name, boolean newScriptEveryTime) throws Exception {
 		long min = Long.MAX_VALUE;
 		for (int k = 0; k < 3; k++) {
 			try (ScriptRunner runner = new ExecutorScriptRunner(name)) {
@@ -22,14 +21,14 @@ public class PerfTest {
 					final Lock<Void, Exception> lock = new Lock<>();
 					
 					ScriptRunner.Engine engine = runner.engine();
-					engine.register("syncEcho", new SyncScriptFunction() {
+					engine.register("syncEcho", new SyncScriptFunction<Object, Object>() {
 						@Override
-						public JsonElement call(JsonElement request) {
+						public Object call(Object request) {
 							// LOGGER.debug("syncEcho({})", request);
 							return request;
 						}
 					});
-					engine.eval("var i" + i + " = 0; syncEcho({'message':'bb'});", new ScriptRunner.End() {
+					engine.eval((newScriptEveryTime ? "var i" + i + " = 0;" : "") + " syncEcho({'message':'bb'});", new ScriptRunner.End() {
 						@Override
 						public void failed(Exception e) {
 							lock.fail(e);
@@ -53,10 +52,17 @@ public class PerfTest {
 	}
 	
 	@Test
-	public void testSync() throws Exception {
-		evalSync("js");
-		evalSync("rhino");
-		evalSync("jav8");
+	public void testSyncNotNewScriptEveryTime() throws Exception {
+		evalSync(null, false);
+		evalSync("rhino", false);
+		evalSync("jav8", false);
+	}
+
+	@Test
+	public void testSyncNewScriptEveryTime() throws Exception {
+		evalSync(null, true);
+		evalSync("rhino", true);
+		evalSync("jav8", true);
 	}
 
 }

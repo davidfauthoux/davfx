@@ -13,21 +13,37 @@ import javax.script.ScriptEngineManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.sun.script.javascript.RhinoScriptEngineFactory;
+
+import lu.flier.script.V8ScriptEngineFactory;
+
 public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ExecutorScriptRunner.class);
 
 	private ScriptEngine scriptEngine;
 	private final ThreadPoolExecutor executorService; // = Executors.newSingleThreadExecutor(new ClassThreadFactory(ExecutorScriptRunner.class));
-	
+
 	public ExecutorScriptRunner() {
+		this(null);
+	}
+	public ExecutorScriptRunner(final String engineProvider) {
 		executorService = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
 
 		doExecute(new Runnable() {
 			@Override
 			public void run() {
-				scriptEngine = new ScriptEngineManager().getEngineByName("js");
+				if (engineProvider == null) {
+					scriptEngine = new ScriptEngineManager().getEngineByName("js");
+				} else if (engineProvider.equals("rhino")) {
+					scriptEngine = new RhinoScriptEngineFactory().getScriptEngine();
+				} else if (engineProvider.equals("jav8")) {
+					scriptEngine = new V8ScriptEngineFactory().getScriptEngine();
+				} else {
+					scriptEngine = new ScriptEngineManager().getEngineByName(engineProvider);
+				}
+				
 				if (scriptEngine == null) {
-					throw new IllegalArgumentException("Bad engine: js");
+					throw new IllegalArgumentException("Bad engine: " + engineProvider);
 				}
 				
 				LOGGER.debug("Script engine {}/{}", scriptEngine.getFactory().getEngineName(), scriptEngine.getFactory().getEngineVersion());
@@ -301,7 +317,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 
 	private void doExecute(Runnable r) {
 		int queueSize = executorService.getQueue().size();
-		LOGGER.debug("Queue size = {}", queueSize);
+		LOGGER.trace("Queue size = {}", queueSize);
 		try {
 			executorService.execute(r);
 		} catch (RejectedExecutionException ree) {
