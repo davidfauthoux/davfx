@@ -170,9 +170,9 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 									scriptEngine.put("callback", null);
 									scriptEngine.put("r", null);
 								}
-							} catch (Exception se) {
+							} catch (Throwable se) {
 								LOGGER.error("Callback script error", se);
-								endManager.fail(se);
+								endManager.fail(new Exception(se));
 							}
 						}
 					});
@@ -255,10 +255,10 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							+ "})(").append(prefix).append("$ || {}");
 					for (String f : syncFunctions.keySet()) {
 						b.append(", (function() {\n"
-								+ "var ").append(prefix).append(prefix).append("f = ").append(prefix).append(f).append(";"
+								+ "var ").append(prefix).append(prefix).append("f = ").append(prefix).append(f).append(";\n"
 								+ "return function(request) {\n"
 									+ "return ").append(prefix).append(prefix).append("f.call(request);\n"
-								+ "}"
+								+ "}\n"
 							+ "})()\n");
 					}
 					for (String f : asyncFunctions.keySet()) {
@@ -267,7 +267,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 								+ "var ").append(prefix).append(prefix).append("e = ").append(prefix).append("endManager;\n"
 								+ "return function(request, callback) {\n"
 									+ "").append(prefix).append(prefix).append("f.call(").append(prefix).append(prefix).append("e, request, callback);\n"
-								+ "}"
+								+ "}\n"
 							+ "})()\n");
 					}
 					b.append(");");
@@ -298,9 +298,9 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 									scriptEngine.put(prefix + f, null);
 								}
 							}
-						} catch (Exception se) {
-							LOGGER.error("Script error: {}", composedScript, se);
-							endManager.fail(se);
+						} catch (Throwable se) {
+							LOGGER.error("Script error\n{}\n", composedScript, se);
+							endManager.fail(new Exception(se));
 						}
 					} finally {
 						endManager.dec();

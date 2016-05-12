@@ -49,7 +49,7 @@ import org.mozilla.javascript.WrapFactory;
  * @author A. Sundararajan
  * @since 1.6
  */
-@SuppressWarnings({ "rawtypes", "restriction" })
+@SuppressWarnings({ "rawtypes", "restriction", "serial" })
 final class RhinoWrapFactory extends WrapFactory {
     private RhinoWrapFactory() {}
     private static RhinoWrapFactory theInstance;

@@ -53,7 +53,7 @@ import org.mozilla.javascript.Wrapper;
  * @author A. Sundararajan
  * @since 1.6
  */
-@SuppressWarnings({ "static-access", "rawtypes" })
+@SuppressWarnings({ "static-access", "rawtypes", "serial" })
 final class JavaAdapter extends ScriptableObject implements Function {
     private JavaAdapter(Invocable engine) {
         this.engine = engine;
