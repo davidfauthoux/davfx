@@ -1,5 +1,7 @@
 package com.davfx.script;
 
+import java.util.Map;
+
 public interface ScriptRunner extends AutoCloseable {
 	interface End {
 		void failed(Exception e);
@@ -17,7 +19,7 @@ public interface ScriptRunner extends AutoCloseable {
 		<T, U> void register(String function, SyncScriptFunction<T, U> syncFunction);
 		<T, U> void register(String function, AsyncScriptFunction<T, U> asyncFunction);
 
-		void eval(String script, End end);
+		<P> void eval(String script, Map<String, ?> parameters, End end);
 
 		Engine sub();
 	}

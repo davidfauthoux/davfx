@@ -181,6 +181,8 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 	}
 	
+	// private final Set<String> executed = new HashSet<>();
+	
 	private final class InnerEngine implements Engine {
 		private Map<String, Object> context = null;
 		private final Map<String, SyncInternal> syncFunctions = new HashMap<>();
@@ -226,7 +228,7 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 		}
 		
 		@Override
-		public void eval(final String script, final End end) {
+		public <P> void eval(final String script, final Map<String, ?> parameters, final End end) {
 			doExecute(new Runnable() {
 				@Override
 				public void run() {
@@ -242,6 +244,11 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					
 					StringBuilder b = new StringBuilder();
 					b.append("(function($");
+					if (parameters != null) {
+						for (String p : parameters.keySet()) {
+							b.append(", ").append(p);
+						}
+					}
 					for (String f : syncFunctions.keySet()) {
 						b.append(", ").append(f);
 					}
@@ -252,7 +259,13 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 					b.append(script);
 					b.append(";\n");
 					b.append("return $;\n"
-							+ "})(").append(prefix).append("$ || {}");
+							+ "})(")
+						.append(prefix).append("$ || {}");
+					if (parameters != null) {
+						for (String p : parameters.keySet()) {
+							b.append(", ").append(prefix).append(p);
+						}
+					}
 					for (String f : syncFunctions.keySet()) {
 						b.append(", (function() {\n"
 								+ "var ").append(prefix).append(prefix).append("f = ").append(prefix).append(f).append(";"
@@ -281,16 +294,32 @@ public final class ExecutorScriptRunner implements ScriptRunner, AutoCloseable {
 							try {
 								scriptEngine.put(prefix + "$", context);
 								scriptEngine.put(prefix + "endManager", endManager);
+								if (parameters != null) {
+									for (Map.Entry<String, ?> e : parameters.entrySet()) {
+										scriptEngine.put(prefix + e.getKey(), e.getValue());
+									}
+								}
 								for (Map.Entry<String, SyncInternal> e : syncFunctions.entrySet()) {
 									scriptEngine.put(prefix + e.getKey(), e.getValue());
 								}
 								for (Map.Entry<String, AsyncInternal> e : asyncFunctions.entrySet()) {
 									scriptEngine.put(prefix + e.getKey(), e.getValue());
 								}
+								/*
+								if (!executed.contains(composedScript)) {
+									LOGGER.warn("Never executed: {} / {}", composedScript, executed);
+									executed.add(composedScript);
+								}
+								*/
 								context = cast(scriptEngine.eval(composedScript));
 							} finally {
-								scriptEngine.put(prefix + "endManager", null);
 								scriptEngine.put(prefix + "$", null);
+								scriptEngine.put(prefix + "endManager", null);
+								if (parameters != null) {
+									for (String p : parameters.keySet()) {
+										scriptEngine.put(prefix + p, null);
+									}
+								}
 								for (String f : syncFunctions.keySet()) {
 									scriptEngine.put(prefix + f, null);
 								}
