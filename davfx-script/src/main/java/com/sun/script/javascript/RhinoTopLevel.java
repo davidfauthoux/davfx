@@ -46,7 +46,7 @@ import org.mozilla.javascript.Wrapper;
  * @author A. Sundararajan
  * @since 1.6
  */
-@SuppressWarnings({ "static-access" })
+@SuppressWarnings({ "static-access", "serial" })
 public final class RhinoTopLevel extends ImporterTopLevel {
     RhinoTopLevel(Context cx, RhinoScriptEngine engine) {
         super(cx);
