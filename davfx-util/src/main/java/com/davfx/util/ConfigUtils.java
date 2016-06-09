@@ -1,11 +1,23 @@
 package com.davfx.util;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.concurrent.TimeUnit;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Charsets;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigException;
+import com.typesafe.config.ConfigFactory;
 
 public final class ConfigUtils {
+	
+	private static final Logger LOGGER = LoggerFactory.getLogger(ConfigUtils.class);
+	
 	private ConfigUtils() {
 	}
 	
@@ -19,5 +31,59 @@ public final class ConfigUtils {
 			throw new ConfigException.BadValue(key, "Invalid value: " + s + ". Char value must be a string with only one character.");
 		}
 		return s.charAt(0);
+	}
+	
+	private static final String loadConfig(String resource) throws IOException {
+		InputStream i = ConfigUtils.class.getClassLoader().getResourceAsStream(resource + ".conf");
+		if (i == null) {
+			LOGGER.warn("Config file not found: {}", resource);
+			return "";
+		}
+		try (BufferedReader r = new BufferedReader(new InputStreamReader(i, Charsets.UTF_8))) {
+			StringBuilder b = new StringBuilder();
+			while (true) {
+				String line = r.readLine();
+				if (line == null) {
+					return b.toString();
+				}
+				String l = line.trim();
+				if (l.startsWith("include ")) {
+					b.append(loadConfig(l.substring("include ".length()).trim()));
+				} else {
+					b.append(line);
+				}
+				b.append("\n");
+			}
+		}
+	}
+	
+	private static final Config load(String resource) {
+		String r;
+		try {
+			r = loadConfig(resource);
+		} catch (Exception e) {
+			throw new RuntimeException("Could not load root config", e);
+		}
+
+		String a;
+		try {
+			a = loadConfig("configure");
+		} catch (Exception e) {
+			throw new RuntimeException("Could not load application config", e);
+		}
+		
+		String c = r + "\n" + a;
+
+		LOGGER.debug("Config: \n{}\n", c);
+
+		return ConfigFactory.parseString(c).resolve();
+	}
+
+	public static final Config load() {
+		return load("root");
+	}
+	
+	public static final Config load(Class<?> clazz) {
+		return load(clazz.getPackage().getName());
 	}
 }

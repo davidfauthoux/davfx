@@ -1,5 +1,6 @@
 package com.davfx.util;
 
+@Deprecated
 public final class Wait implements Runnable {
 	private boolean finished = false;
 

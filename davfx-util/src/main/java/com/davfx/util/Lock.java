@@ -1,5 +1,6 @@
 package com.davfx.util;
 
+@Deprecated
 public final class Lock<R, E extends Exception> {
 	private boolean done = false;
 	private R result = null;

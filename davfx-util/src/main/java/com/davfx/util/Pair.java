@@ -1,5 +1,6 @@
 package com.davfx.util;
 
+@Deprecated
 public final class Pair<T, U> {
 	public final T first;
 	public final U second;
