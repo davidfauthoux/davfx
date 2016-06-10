@@ -33,8 +33,8 @@ public final class ConfigUtils {
 		return s.charAt(0);
 	}
 	
-	private static final String loadConfig(String resource) throws IOException {
-		InputStream i = ConfigUtils.class.getClassLoader().getResourceAsStream(resource + ".conf");
+	private static final String loadConfig(Class<?> clazz, String resource) throws IOException {
+		InputStream i = clazz.getClassLoader().getResourceAsStream(resource + ".conf");
 		if (i == null) {
 			LOGGER.warn("Config file not found: {}", resource);
 			return "";
@@ -48,7 +48,7 @@ public final class ConfigUtils {
 				}
 				String l = line.trim();
 				if (l.startsWith("include ")) {
-					b.append(loadConfig(l.substring("include ".length()).trim()));
+					b.append(loadConfig(clazz, l.substring("include ".length()).trim()));
 				} else {
 					b.append(line);
 				}
@@ -57,17 +57,17 @@ public final class ConfigUtils {
 		}
 	}
 	
-	private static final Config load(String resource) {
+	private static final Config load(Class<?> clazz, String resource) {
 		String r;
 		try {
-			r = loadConfig(resource);
+			r = loadConfig(clazz, resource);
 		} catch (Exception e) {
 			throw new RuntimeException("Could not load root config", e);
 		}
 
 		String a;
 		try {
-			a = loadConfig("configure");
+			a = loadConfig(clazz, "configure");
 		} catch (Exception e) {
 			throw new RuntimeException("Could not load application config", e);
 		}
@@ -79,11 +79,13 @@ public final class ConfigUtils {
 		return ConfigFactory.parseString(c).resolve();
 	}
 
+	/*
 	public static final Config load() {
 		return load("root");
 	}
+	*/
 	
 	public static final Config load(Class<?> clazz) {
-		return load(clazz.getPackage().getName());
+		return load(clazz, clazz.getPackage().getName());
 	}
 }
